@@ -40,6 +40,7 @@ const P = {
   alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>',
   check: '<path d="m5 12 5 5 9-10"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   dash: '<path d="M6 12h12"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',

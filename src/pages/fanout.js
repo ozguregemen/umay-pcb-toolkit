@@ -4,7 +4,7 @@ import { heroes, rows, block, formulaBlock, messages, invalid, checks } from '..
 import { fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
-import { svg, rect, circle, text, dimH, dimV, arrow } from '../ui/svg.js';
+import { svg, rect, circle, text, dimH, dimV, arrow, bar } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -89,14 +89,6 @@ const LEN = ['mm', 'mil'];
 const L = (mm) => (isImperial() ? `${fixed(fromMm(mm, 'mil'), 2)} mil` : `${fixed(mm, 3)} mm`);
 const r1 = (x) => Math.round(x * 10) / 10;
 
-/** Filled bar of width w from (x1,y1) to (x2,y2) — a trace at any angle. */
-function bar(x1, y1, x2, y2, w, cls) {
-  const len = Math.hypot(x2 - x1, y2 - y1) || 1;
-  const nx = (-(y2 - y1) / len) * (w / 2);
-  const ny = ((x2 - x1) / len) * (w / 2);
-  const pts = [[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]];
-  return `<polygon class="${cls}" points="${pts.map(([x, y]) => `${r1(x)},${r1(y)}`).join(' ')}"/>`;
-}
 
 /**
  * Live top view of a 3 × 3 corner of the BGA, to scale: pitch, the traces
@@ -145,7 +137,7 @@ function diagram(v, u, r) {
   for (const y of Y) for (const x of X) b += circle(x, y, D / 2, 'cu');
   // No trace fits: show one trace with its spacing, overlapping the pads.
   if (nd === 0) {
-    b += `<rect class="zone-bad" style="opacity:.75" x="${r1(xS)}" y="${r1((yA + yB) / 2 - wpx / 2 - spx)}" width="${r1(X[2] - xS)}" height="${r1(wpx + 2 * spx)}"/>`
+    b += rect(xS, (yA + yB) / 2 - wpx / 2 - spx, X[2] - xS, wpx + 2 * spx, 'zone-bad faded')
       + rect(xS, (yA + yB) / 2 - wpx / 2, X[2] - xS, wpx, 'cu');
   }
 
@@ -154,7 +146,7 @@ function diagram(v, u, r) {
   const vy = Y[1] + P / 2;
   if (live(via)) {
     const rv = (via / 2) * s;
-    b += `<circle class="${fits ? 'zone-ok' : 'zone-bad'}" style="opacity:.75" cx="${r1(vx)}" cy="${r1(vy)}" r="${r1(rv + spx)}"/>`
+    b += circle(vx, vy, rv + spx, fits ? 'zone-ok faded' : 'zone-bad faded')
       + bar(X[1], Y[1], vx, vy, wpx, 'cu') + circle(vx, vy, rv, 'cu') + circle(vx, vy, Math.max(rv * 0.45, 1), 'hole')
       + (fits ? '' : circle(vx, vy, rv, 'wire bad'));
   } else if (maxVia > 0) b += circle(vx, vy, (maxVia / 2) * s, 'dim');

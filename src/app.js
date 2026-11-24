@@ -4,6 +4,7 @@ import { t, getLang, setLang, onLangChange, registerStrings } from './i18n.js';
 import { TOOLS, CATEGORIES, toolById, titleKey, descKey } from './registry.js';
 import { mountCalculator } from './ui/calculator.js';
 import { openPalette, initPaletteShortcuts } from './ui/palette.js';
+import { installZoom } from './ui/zoom.js';
 import { icon } from './ui/icons.js';
 import { esc } from './ui/format.js';
 import { getPref, setPref, pushRecent, onPrefChange } from './prefs.js';
@@ -186,6 +187,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-open-palette]')) openPalette();
 });
 initPaletteShortcuts();
+installZoom();
 
 // ---- Repository link (derived from the GitHub Pages host) ----
 (function repoLink() {

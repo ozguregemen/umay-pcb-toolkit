@@ -4,7 +4,7 @@ import { heroes, rows, block, formulaBlock, messages, invalid, checks } from '..
 import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
-import { svg, rect, circle, path, text, dimH, arrow } from '../ui/svg.js';
+import { svg, rect, circle, path, ring as annulus, text, dimH, arrow } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -136,8 +136,6 @@ const Lh = (mm) => (isImperial()
   : `${fixed(mm, 3)} <span class="u">mm</span>`);
 
 const r2 = (x) => Math.round(x * 100) / 100;
-/** Closed circle sub-path (for even-odd rings). */
-const ringPath = (cx, cy, r) => `M${r2(cx - r)},${r2(cy)}a${r2(r)},${r2(r)} 0 1,0 ${r2(2 * r)},0a${r2(r)},${r2(r)} 0 1,0 ${r2(-2 * r)},0Z`;
 
 /**
  * Live top view, to scale: pad, finished-hole tolerance band, drilled hole,
@@ -172,7 +170,7 @@ function diagram(v, u, r) {
   let g = circle(cx, cy, Rp, 'cu') + circle(cx, cy, Math.max((nomH / 2) * s, 2), 'hole');
   const rMin = Math.max((minH / 2) * s, 1);
   const rMax = Math.max((a / 2) * s, rMin + 1.5);
-  g += `<path class="zone" fill-rule="evenodd" d="${ringPath(cx, cy, rMax)}${ringPath(cx, cy, rMin)}"/>`
+  g += annulus(cx, cy, rMax, rMin, 'zone')
     + circle(cx, cy, rMin, 'dimline') + circle(cx, cy, rMax, 'dimline')
     + circle(cx, cy, Math.max((drill / 2) * s, rMax + 1), 'dim');
   // Component lead inside the hole.

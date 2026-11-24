@@ -93,6 +93,31 @@ export const rect = (x, y, w, h, cls, extra = '') => `<rect class="${cls}" x="${
 export const circle = (cx, cy, r, cls) => `<circle class="${cls}" cx="${f(cx)}" cy="${f(cy)}" r="${f(r)}"/>`;
 export const path = (d, cls) => `<path class="${cls}" d="${d}"/>`;
 export const poly = (pts, cls = 'wire') => `<polyline class="${cls}" points="${pts.map(([x, y]) => `${f(x)},${f(y)}`).join(' ')}"/>`;
+/** Closed filled shape through [[x,y], …]. */
+export const polygon = (pts, cls, extra = '') => `<polygon class="${cls}"${extra} points="${pts.map(([x, y]) => `${f(x)},${f(y)}`).join(' ')}"/>`;
+
+/** Straight trace of width w from (x1,y1) to (x2,y2), any angle. */
+export function bar(x1, y1, x2, y2, w, cls, extra = '') {
+  const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const nx = (-(y2 - y1) / len) * (w / 2);
+  const ny = ((x2 - x1) / len) * (w / 2);
+  return polygon([[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]], cls, extra);
+}
+
+// Rings are often drawn to scale with small radii, so keep two decimals.
+const f2 = (n) => Math.round(n * 100) / 100;
+const circlePath = (cx, cy, r) => `M${f2(cx - r)},${f2(cy)}a${f2(r)},${f2(r)} 0 1,0 ${f2(2 * r)},0a${f2(r)},${f2(r)} 0 1,0 ${f2(-2 * r)},0Z`;
+/** Annulus between rOuter and rInner (even-odd fill), e.g. an annular ring or tolerance band. */
+export const ring = (cx, cy, rOuter, rInner, cls) => `<path class="${cls}" fill-rule="evenodd" d="${circlePath(cx, cy, rOuter)}${circlePath(cx, cy, rInner)}"/>`;
+
+/** Wide horizontal arrow from x1 to x2 at height y, shaft thickness th (waves, power flow). */
+export function blockArrow(x1, x2, y, th, cls) {
+  const dir = Math.sign(x2 - x1) || 1;
+  const hl = Math.min(12, Math.abs(x2 - x1) * 0.6);
+  const hw = th / 2 + 4;
+  const xh = x2 - dir * hl;
+  return `<path class="${cls}" d="M${f(x1)},${f(y - th / 2)}H${f(xh)}V${f(y - hw)}L${f(x2)},${f(y)}L${f(xh)},${f(y + hw)}V${f(y + th / 2)}H${f(x1)}Z"/>`;
+}
 
 // ---------------------------------------------------------------------------
 // Schematic (IEC style)
@@ -114,28 +139,37 @@ export const ground = (x, y) => `<path class="wire" d="M${f(x)},${f(y)}v6M${f(x 
 /**
  * Two-terminal component between (x1,y1) and (x2,y2) — horizontal or vertical.
  * kind: 'R' | 'C' | 'L' | 'D' | 'LED' | 'X' (crystal) | 'V' (DC source, + at
- * the first point) | 'I' (current source) | 'SW' (switch).
- * labels: { name, value, side } — side flips labels to the other side.
+ * the first point) | 'AC' (sine source) | 'I' (current source) | 'SW' (switch).
+ * opts: name, value (live, accent colour unless valueCls is given), flip (labels
+ * on the other side), hi (accent outline), dashed (parasitic / optional part).
  */
-export function twoTerm(kind, x1, y1, x2, y2, { name, value, flip = false, hi = false } = {}) {
+export function twoTerm(kind, x1, y1, x2, y2, { name, value, flip = false, hi = false, dashed = false, valueCls = 'val' } = {}) {
   const horiz = Math.abs(y2 - y1) < Math.abs(x2 - x1);
   const cx = (x1 + x2) / 2;
   const cy = (y1 + y2) / 2;
   const len = horiz ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
-  const body = { R: 34, C: 10, L: 36, D: 16, LED: 16, X: 18, V: 26, I: 26, SW: 26 }[kind] ?? 30;
+  const body = { R: 34, C: 10, L: 36, D: 16, LED: 16, X: 18, V: 26, AC: 26, I: 26, SW: 26 }[kind] ?? 30;
   const half = Math.min(body, len - 8) / 2;
   const dir = horiz ? Math.sign(x2 - x1) || 1 : Math.sign(y2 - y1) || 1;
+  const dash = dashed ? ' dash' : '';
   // Leads
+  const lead = (a, b) => poly([a, b], `wire${dash}`);
   const leads = horiz
-    ? wire([x1, y1], [cx - dir * half, cy]) + wire([cx + dir * half, cy], [x2, y2])
-    : wire([x1, y1], [cx, cy - dir * half]) + wire([cx, cy + dir * half], [x2, y2]);
+    ? lead([x1, y1], [cx - dir * half, cy]) + lead([cx + dir * half, cy], [x2, y2])
+    : lead([x1, y1], [cx, cy - dir * half]) + lead([cx, cy + dir * half], [x2, y2]);
   // Body drawn for a horizontal part centred at origin, then rotated.
-  const comp = hi ? 'comp hi' : 'comp';
+  const comp = `comp${hi ? ' hi' : ''}${dash}`;
+  const line = `wire${hi ? ' hi' : ''}${dash}`;
   let g = '';
+  let upright = ''; // drawn without rotation (the sine of an AC source)
   switch (kind) {
     case 'R': g = `<rect class="${comp}" x="-17" y="-6.5" width="34" height="13" rx="1"/>`; break;
-    case 'C': g = `<path class="wire${hi ? ' hi' : ''}" d="M-4,-11V11M4,-11V11" style="stroke-width:2.4"/>`; break;
-    case 'L': g = `<path class="wire${hi ? ' hi' : ''}" d="M-18,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0"/>`; break;
+    case 'C': g = `<path class="${line}" d="M-4,-11V11M4,-11V11" style="stroke-width:2.4"/>`; break;
+    case 'L': g = `<path class="${line}" d="M-18,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0"/>`; break;
+    case 'AC':
+      g = `<circle class="${comp}" r="13"/>`;
+      upright = `<path class="wire" d="M${f(cx - 7)},${f(cy)}q3.5,-7 7,0t7,0"/>`;
+      break;
     case 'D': g = `<path class="${comp}" d="M-7,-8L7,0L-7,8Z"/><path class="wire" d="M7,-8V8"/>`; break;
     case 'LED': g = `<path class="${comp}" d="M-7,-8L7,0L-7,8Z"/><path class="wire" d="M7,-8V8M0,-11l5,-7M5,-11l5,-7"/><path class="arrow" d="M5,-18l-3.5,1.2l2.3,1.8zM10,-18l-3.5,1.2l2.3,1.8z"/>`; break;
     case 'X': g = `<path class="wire" d="M-9,-10V10M9,-10V10" style="stroke-width:2"/><rect class="${comp}" x="-5" y="-8" width="10" height="16"/>`; break;
@@ -146,22 +180,25 @@ export function twoTerm(kind, x1, y1, x2, y2, { name, value, flip = false, hi = 
   }
   // Rotate so the body's +x axis points from (x1,y1) to (x2,y2).
   const rot = horiz ? (dir > 0 ? 0 : 180) : (dir > 0 ? 90 : -90);
-  const bodySvg = `<g transform="translate(${f(cx)},${f(cy)}) rotate(${rot})">${g}</g>`;
+  const bodySvg = `<g transform="translate(${f(cx)},${f(cy)}) rotate(${rot})">${g}</g>${upright}`;
   // Labels
   let labels = '';
-  const off = kind === 'V' || kind === 'I' ? 19 : kind === 'C' ? 15 : 13;
+  const off = kind === 'V' || kind === 'AC' || kind === 'I' ? 19 : kind === 'C' ? 15 : 13;
   if (horiz) {
     const s = flip ? 1 : -1;
     if (name) labels += text(cx, cy + s * off + (s > 0 ? 9 : 0), name, { cls: 'name' });
-    if (value) labels += text(cx, cy - s * off + (s > 0 ? 0 : 9), value, { cls: 'val' });
+    if (value) labels += text(cx, cy - s * off + (s > 0 ? 0 : 9), value, { cls: valueCls });
   } else {
     const ax = flip ? cx - off : cx + off;
     const anchor = flip ? 'end' : 'start';
     if (name) labels += text(ax, cy - 2, name, { cls: 'name', anchor });
-    if (value) labels += text(ax, cy + 12, value, { cls: 'val', anchor });
+    if (value) labels += text(ax, cy + 12, value, { cls: valueCls, anchor });
   }
   return leads + bodySvg + labels;
 }
+
+/** Inverter (logic NOT / oscillator amplifier): input at x, output at x + 30. */
+export const inverter = (x, y, cls = 'comp') => `<path class="${cls}" d="M${f(x)},${f(y - 11)}L${f(x)},${f(y + 11)}L${f(x + 23)},${f(y)}Z"/>${circle(x + 26.5, y, 3.5, cls)}`;
 
 /** Simple rectangular block (IC, regulator) with a title. */
 export function block(x, y, w, h, title, sub) {

@@ -5,6 +5,7 @@ import { t } from '../i18n.js';
 import { esc, unitLabel, fmt } from './format.js';
 import { isImperial } from '../prefs.js';
 import { icon } from './icons.js';
+import { addZoomButtons } from './zoom.js';
 
 /*
  Field definitions
@@ -358,10 +359,19 @@ export function mountCalculator(root, page, params) {
         console.error(err);
       }
     }
-    if (invalid) {
-      result.innerHTML = `${diagram}<p class="msg-empty">${icon('alert', 18)} ${esc(t('inputsInvalid'))}</p>`;
-    } else {
-      result.innerHTML = diagram + page.render(res, v, state.units);
+    // The answer comes first: the diagram goes after the headline values and
+    // their warnings, before the detail tables.
+    result.innerHTML = invalid
+      ? `<p class="msg-empty">${icon('alert', 18)} ${esc(t('inputsInvalid'))}</p>`
+      : page.render(res, v, state.units);
+    if (diagram) {
+      let anchor = null;
+      for (const el of result.children) {
+        if (el.matches('.heroes, .hero, .msg, .msg-empty')) anchor = el; else break;
+      }
+      if (anchor) anchor.insertAdjacentHTML('afterend', diagram);
+      else result.insertAdjacentHTML('afterbegin', diagram);
+      addZoomButtons(result.querySelector('.diagram-wrap'));
     }
     const hero = result.querySelector('.hero');
     peek.querySelector('.peek-label').textContent = hero?.querySelector('.hero-label')?.textContent ?? '';

@@ -3,7 +3,7 @@ import { nearestStandard } from '../engine/eseries.js';
 import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
-import { svg, twoTerm, wire, node, ground, terminal, text, circle, path, arrow } from '../ui/svg.js';
+import { svg, twoTerm, wire, node, ground, terminal, text, path, arrow } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -72,13 +72,6 @@ const strings = {
   },
 };
 
-/** AC (signal) source between (x, y1) and (x, y2): circle with a sine. */
-function acSource(x, y1, y2) {
-  const cy = (y1 + y2) / 2;
-  return wire([x, y1], [x, cy - 13]) + wire([x, cy + 13], [x, y2]) + circle(x, cy, 13, 'comp')
-    + path(`M${x - 7},${cy}c2.3,-6.5 4.7,-6.5 7,0s4.7,6.5 7,0`, 'wire');
-}
-
 /**
  * Live schematic: the chosen network between a Z₀ source and a Z₀ load, each
  * resistor with the value in use (standard or exact), plus Zin and the
@@ -96,7 +89,7 @@ function diagram(v, u, r) {
   const pIn = 125;
   const pOut = 335;
   const xL = 385;
-  let b = acSource(34, yR, yG)
+  let b = twoTerm('AC', 34, yR, 34, yG)
     + twoTerm('R', 34, yR, pIn, yR, { name: 'Z₀', value: z0 })
     + wire([pOut, yR], [xL, yR])
     + twoTerm('R', xL, yR, xL, yG, { name: 'Z₀', value: z0 })

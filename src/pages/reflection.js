@@ -1,7 +1,7 @@
 import { gammaFromLoad, fromGammaMag, gammaFromVswr, gammaFromReturnLoss } from '../engine/rf.js';
 import { heroes, rows, block, formulaBlock } from '../ui/calculator.js';
 import { fmt, fixed } from '../ui/format.js';
-import { svg, wire, rect, circle, path, text, axes, wave, dimH, dimV } from '../ui/svg.js';
+import { svg, wire, rect, circle, path, text, axes, wave, dimH, dimV, blockArrow } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
 const strings = {
@@ -56,16 +56,6 @@ const strings = {
     rf_dgEnv: '|V| along the line (standing wave)',
   },
 };
-
-/** Block arrow from x1 to x2 at height y, shaft thickness th. */
-function blockArrow(x1, x2, y, th, cls) {
-  const dir = Math.sign(x2 - x1) || 1;
-  const hl = Math.min(12, Math.abs(x2 - x1) * 0.6);
-  const hw = th / 2 + 4;
-  const xh = x2 - dir * hl;
-  const f = (n) => Math.round(n * 10) / 10;
-  return `<path class="${cls}" d="M${f(x1)},${f(y - th / 2)}H${f(xh)}V${f(y - hw)}L${f(x2)},${f(y)}L${f(xh)},${f(y + hw)}V${f(y + th / 2)}H${f(x1)}Z"/>`;
-}
 
 /**
  * Live picture: source → Z₀ line → ZL. The incident wave is a fixed arrow;

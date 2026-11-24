@@ -143,6 +143,8 @@ const tr = {
   homeLead:
     'IPC kurallarına dayalı PCB hesapları, sinyal bütünlüğü, güç ve temel devre araçları. Kurulum yok, veri cihazınızdan çıkmaz, her sonuçla formülü ve geçerlilik uyarıları görünür.',
   homeRecent: 'Son kullanılanlar',
+  zoomIn: 'Büyüt',
+  close: 'Kapat',
   homeAll: 'Tüm hesaplayıcılar',
   homeOpen: 'Aç',
 
@@ -347,6 +349,8 @@ const en = {
   homeLead:
     'PCB calculations based on IPC rules, plus signal integrity, power and circuit tools. Nothing to install, no data leaves your device, and every result shows its formula and validity warnings.',
   homeRecent: 'Recently used',
+  zoomIn: 'Enlarge',
+  close: 'Close',
   homeAll: 'All calculators',
   homeOpen: 'Open',
 
@@ -430,7 +434,7 @@ export function setLang(next) {
   if (!DICTS[next] || next === lang) return;
   lang = next;
   try { localStorage.setItem(STORAGE_KEY, next); } catch { /* ignore */ }
-  document.documentElement.lang = next;
+  if (typeof document !== 'undefined') document.documentElement.lang = next;
   listeners.forEach((fn) => fn(next));
 }
 

@@ -4,7 +4,7 @@ import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calc
 import { fmt, si, siHtml } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
-import { svg, rect, circle, path, text, dimH, dimV, callout, axes, wave } from '../ui/svg.js';
+import { svg, rect, circle, path, polygon, text, dimH, dimV, callout, axes, wave } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -162,7 +162,7 @@ function diagram(v, u, r) {
   // Melt region above the line, the line itself (dashed beyond 10 s), Preece.
   const xa = X(10 ** lx0); const xb = X(10 ** lx1);
   const ya = Y(Iat(10 ** lx0)); const yb = Y(Iat(10 ** lx1));
-  b += `<polygon class="zone-bad" points="${r1(xa)},${r1(ya)} ${r1(xb)},${r1(yb)} ${r1(xb)},${Y0 - PH} ${r1(xa)},${Y0 - PH}"/>`;
+  b += polygon([[xa, ya], [xb, yb], [xb, Y0 - PH], [xa, Y0 - PH]], 'zone-bad');
   if (lx1 > 1) {
     const x10 = Math.max(lx0, 1);
     b += wave([[xa, ya], [X(10 ** x10), Y(Iat(10 ** x10))]]) + wave([[X(10 ** x10), Y(Iat(10 ** x10))], [xb, yb]], 'wave2');

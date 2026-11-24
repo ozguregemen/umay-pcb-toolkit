@@ -30,7 +30,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 See [docs/karsilastirma.md](docs/karsilastirma.md) for a comparison with Saturn PCB Toolkit, KiCad, Sierra Circuits, Polar, Rogers and others.
 
-Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs. Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout.
+Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout.
 
 See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineering review: what was wrong in earlier versions, the methods used now, how they were validated, and known limitations.
 
@@ -70,13 +70,13 @@ python -m http.server 8080
 npm test                  # Node ≥ 18, no dependencies
 ```
 
-Or open `/tests/` in the browser. CI runs the tests on every push and pull request; the site is only deployed when they pass.
+Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. CI runs the tests on every push and pull request; the site is only deployed when they pass.
 
 ## Adding a calculator
 
 1. `src/engine/<name>.js` — pure functions with JSDoc, units in the names (`widthMm`, `currentA`).
 2. `tests/cases/<area>.js` — reference values computed by hand, with the arithmetic in a comment.
-3. `src/pages/<name>.js` — `export default { id, strings: { tr, en }, sections, compute, render }`; see `src/pages/spacing.js` and the field reference at the top of `src/ui/calculator.js`.
+3. `src/pages/<name>.js` — `export default { id, strings: { tr, en }, sections, compute, render, diagram? }`; draw diagrams with `src/ui/svg.js` (plain numbers in geometry, display formatters only in labels); see `src/pages/spacing.js` and the field reference at the top of `src/ui/calculator.js`.
 4. Register it in `src/registry.js` and add `tool_<id>` / `tool_<id>_desc` to `src/i18n.js`.
 
 ## Deploy

@@ -144,6 +144,9 @@ const FIGS = {
   },
 };
 
+/** Names usable as [[fig:name]] (tests render every one). */
+export const figureNames = () => Object.keys(FIGS);
+
 export function figure(name) {
   return FIGS[name] ? FIGS[name]() : '';
 }

@@ -133,12 +133,6 @@ const PY = 172;
 const PW = 170;
 const PH = 112;
 
-/** AC source (circle with a sine) between (x, y1) and (x, y2). */
-function acSource(x, y1, y2) {
-  const cy = (y1 + y2) / 2;
-  return wire([x, y1], [x, cy - 13]) + wire([x, cy + 13], [x, y2]) + circle(x, cy, 13, 'comp')
-    + path(`M${x - 7},${cy}q3.5,-7 7,0t7,0`, 'wire');
-}
 
 /** RC low-pass (Vin → R → C to GND → Vout) or RL (Vin → R → L to GND, current i). */
 function firstOrderSchematic(v, r, isRl) {
@@ -189,7 +183,7 @@ function lcSchematic(v, r) {
   const yt = 60;
   const yb = 160;
   const hasR = v.lcR > 0;
-  let b = acSource(xs, yt, yb);
+  let b = twoTerm('AC', xs, yt, xs, yb);
   b += hasR
     ? twoTerm('R', xs, yt, 100, yt, { name: 'R', value: val(v.lcR, 'Ω') }) + twoTerm('L', 100, yt, xc, yt, { name: 'L', value: val(v.lcL, 'H') })
     : twoTerm('L', xs, yt, xc, yt, { name: 'L', value: val(v.lcL, 'H') });

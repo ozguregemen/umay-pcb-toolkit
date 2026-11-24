@@ -2,7 +2,7 @@ import { effectiveLoad, equalLoadCaps, pullingPpm, ppmToHz, driftSeconds } from 
 import { nearestStandard } from '../engine/eseries.js';
 import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
-import { svg, twoTerm, wire, node, ground, text, rect, circle, path, dimH, arrow } from '../ui/svg.js';
+import { svg, twoTerm, wire, node, ground, text, rect, circle, path, dimH, arrow, inverter } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
 const strings = {
@@ -93,7 +93,6 @@ const pF = (x) => x * 1e-12;
 
 /** pF label ('?' while unknown); zero allowed for Cstray. */
 const pf = (x, zeroOk = false) => (Number.isFinite(x) && (x > 0 || (zeroOk && x === 0)) ? `${fmt(x, 3)} pF` : '?');
-const DASH = ' style="stroke-dasharray:4 3"';
 
 /** Pierce oscillator with the live C1, C2, Cstray and the CL formula. */
 function pierce(v, r) {
@@ -110,7 +109,7 @@ function pierce(v, r) {
   // MCU: inverter XIN → XOUT with the feedback resistor Rf across it
   let b = rect(90, 6, 260, yp - 6, 'soft', ' rx="4"') + text(98, 21, 'MCU', { cls: 'lbl', anchor: 'start' })
     + wire([xi, yp], [xi, yi], [204, yi])
-    + path(`M204,${yi - 11}L204,${yi + 11}L227,${yi}Z`, 'comp') + circle(230.5, yi, 3.5, 'comp')
+    + inverter(204, yi)
     + wire([234, yi], [xo, yi], [xo, yp])
     + wire([160, yi], [160, 27]) + twoTerm('R', 160, 27, 280, 27) + wire([280, 27], [280, yi])
     + node(160, yi) + node(280, yi)
@@ -119,8 +118,7 @@ function pierce(v, r) {
     + text(xo - 6, yp - 5, 'XOUT', { cls: 'lbl', anchor: 'end' });
   // Pins down to the crystal, Cstray (dashed) across the pins
   b += wire([xi, yp], [xi, yx]) + wire([xo, yp], [xo, yx])
-    + `<path class="wire"${DASH} d="M${xi},${ys}H216M224,${ys}H${xo}"/>`
-    + `<path class="wire" d="M216,${ys - 10}V${ys + 10}M224,${ys - 10}V${ys + 10}" style="stroke-dasharray:3 2;stroke-width:2.2"/>`
+    + twoTerm('C', xi, ys, xo, ys, { dashed: true })
     + node(xi, ys) + node(xo, ys)
     + text(209, ys - 5, 'Cstray', { cls: 'name', anchor: 'end' })
     + text(231, ys - 5, pf(v.cs, true), { cls: 'val', anchor: 'start' });

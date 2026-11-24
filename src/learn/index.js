@@ -7,6 +7,7 @@ import { getPref, setPref } from '../prefs.js';
 import { toolById } from '../registry.js';
 import { render } from './markdown.js';
 import { figureStrings } from './figures.js';
+import { addZoomButtons } from '../ui/zoom.js';
 
 /**
  * Lessons in recommended order. Body text lives in lessons/<id>.js
@@ -148,6 +149,7 @@ export async function mountLesson(root, id) {
       ${nextL ? `<a class="card next" href="#/learn/${nextL.id}"><small>${esc(t('learn_next'))}</small><b>${esc(t(lessonTitleKey(nextL.id)))}</b></a>` : ''}
     </nav>`;
 
+  addZoomButtons(root.querySelector('.lesson'));
   root.querySelector('[data-done]').addEventListener('click', (e) => {
     const btn = e.currentTarget;
     const on = btn.getAttribute('aria-pressed') !== 'true';
