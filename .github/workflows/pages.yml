@@ -24,20 +24,12 @@ jobs:
       - name: Engine tests
         run: npm test
 
-  deploy:
+  # Build and deploy are separate jobs (as in GitHub's starter workflows) so the
+  # uploaded artifact is fully registered before deploy-pages looks it up.
+  build:
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # Job-level permissions replace the top-level ones, so list everything the
-    # job needs: checkout (contents), artifact lookup (actions), Pages deploy.
-    permissions:
-      contents: read
-      actions: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
       - name: Assemble static site
@@ -48,5 +40,18 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Job-level permissions replace the top-level ones.
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
