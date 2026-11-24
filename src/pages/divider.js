@@ -2,6 +2,7 @@ import { dividerAnalyse, dividerDesign, feedbackDivider, dividerTolerance, feedb
 import { TOLERANCE } from '../engine/eseries.js';
 import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
+import { svg, twoTerm, wire, node, ground, terminal, arrow, text, block as icBlock } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
 
 const strings = {
@@ -19,6 +20,9 @@ const strings = {
     dv_rTotal: 'Yaklaşık toplam direnç R1 + R2',
     dv_rTotalInfo: 'Toplam direnç bölücü akımını ve çıkış direncini belirler. Arama, toplamı bu değerin 0,5–2 katı olan çiftlerle sınırlıdır.',
     dv_vref: 'Referans gerilimi Vref (VFB)',
+    dv_dgDiv: 'Gerilim bölücü devresi',
+    dv_dgFb: 'Ayarlı regülatör geri besleme bölücüsü',
+    dv_dgReg: 'Regülatör',
     dv_tolTitle: 'Tolerans analizi',
     dv_rtol: 'Direnç toleransı',
     dv_rtolInfo: 'Her iki direncin toleransı. Seri: E24 genellikle ±%5 veya ±%1, E96 ±%1, hassas dirençler ±%0,1.',
@@ -80,6 +84,9 @@ const strings = {
     dv_rTotal: 'Approximate total resistance R1 + R2',
     dv_rTotalInfo: 'The total sets the divider current and the output resistance. The search is limited to pairs whose sum is 0.5–2× this value.',
     dv_vref: 'Reference voltage Vref (VFB)',
+    dv_dgDiv: 'Voltage divider circuit',
+    dv_dgFb: 'Adjustable regulator feedback divider',
+    dv_dgReg: 'Regulator',
     dv_tolTitle: 'Tolerance analysis',
     dv_rtol: 'Resistor tolerance',
     dv_rtolInfo: 'Tolerance of both resistors. Typically E24 ±5 % or ±1 %, E96 ±1 %, precision parts ±0.1 %.',
@@ -234,7 +241,46 @@ function renderFb(r, v) {
     ], 'dv_noteFb', ['Adjustable regulator datasheets (FB divider)', 'IEC 60063:2015 (E-series)']);
 }
 
+/** Live schematic: shows the values in use and the resulting output voltage. */
+function diagram(v, u, r) {
+  const val = (x, unit) => (Number.isFinite(x) && x > 0 ? si(x, unit, 3) : '?');
+  if (v.mode === 'fb') {
+    const r1 = r?.r1;
+    const vout = r?.vout;
+    const body = icBlock(40, 40, 110, 110, t('dv_dgReg'), 'VOUT · FB · GND')
+      + text(156, 66, 'VOUT', { cls: 'lbl', anchor: 'start' }) + text(156, 116, 'FB', { cls: 'lbl', anchor: 'start' })
+      + wire([150, 60], [280, 60]) + node(280, 60)
+      + twoTerm('R', 280, 60, 280, 110, { name: 'R1', value: val(r1, 'Ω') })
+      + node(280, 110) + wire([150, 110], [280, 110])
+      + twoTerm('R', 280, 110, 280, 170, { name: 'R2', value: val(v.r2fb, 'Ω') })
+      + ground(280, 170) + wire([95, 150], [95, 170]) + ground(95, 170)
+      + wire([280, 60], [380, 60]) + terminal(380, 60, `Vout ≈ ${val(vout, 'V')}`, 'top', 'val')
+      + text(215, 128, `Vref = ${val(v.vref, 'V')}`, { cls: 'val' })
+      + arrow(250, 116, 250, 160, { cls: 'flow', headCls: 'arrow flow' }) + text(244, 146, 'I_FB', { cls: 'lbl', anchor: 'end' });
+    return svg(440, 200, body, t('dv_dgFb'), { wide: true });
+  }
+  const isDesign = v.mode === 'design';
+  const r1 = isDesign ? r?.pair?.r1 : v.r1;
+  const r2 = isDesign ? r?.pair?.r2 : v.r2;
+  const vout = isDesign ? r?.voutStd : r?.vout;
+  const loaded = !isDesign && v.rl > 0;
+  const i = isDesign ? r?.current : (loaded ? r?.iR1 : r?.iDivider);
+  let body = twoTerm('V', 60, 50, 60, 170, { name: 'Vin', value: val(v.vin, 'V'), flip: true })
+    + wire([60, 50], [200, 50])
+    + twoTerm('R', 200, 50, 200, 110, { name: 'R1', value: val(r1, 'Ω') })
+    + node(200, 110)
+    + twoTerm('R', 200, 110, 200, 170, { name: 'R2', value: val(r2, 'Ω') })
+    + wire([60, 170], [200, 170]) + ground(130, 170) + node(130, 170)
+    + wire([200, 110], [370, 110]) + terminal(370, 110, `Vout = ${val(vout, 'V')}`, 'top', 'val')
+    + arrow(178, 62, 178, 98, { cls: 'flow', headCls: 'arrow flow' }) + text(172, 84, `I = ${val(i, 'A')}`, { cls: 'lbl', anchor: 'end' });
+  if (loaded) {
+    body += node(300, 110) + twoTerm('R', 300, 110, 300, 170, { name: 'RL', value: val(v.rl, 'Ω') }) + wire([200, 170], [300, 170]);
+  }
+  return svg(440, 200, body, t('dv_dgDiv'), { wide: true });
+}
+
 export default {
+  diagram,
   id: 'divider',
   strings,
   sections: [

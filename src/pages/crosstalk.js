@@ -4,6 +4,7 @@ import { hero, rows, block, formulaBlock, checks } from '../ui/calculator.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
+import { svg, rect, path, text, dimH, dimV } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -38,6 +39,9 @@ const strings = {
     xt_3w: '3W kuralı (merkezden merkeze ≥ 3w)',
     xt_target_ok: 'Hedef karışmanın altında',
     xt_note: 'H. Johnson: karışma ≈ K / (1 + (D/H)²), D merkezden merkeze mesafe, H düzleme yükseklik; iz genişliği ve kalınlığı formülde yer almaz. D. Brooks’a göre stripline’da H = Ha·Hb/(Ha+Hb) ve K = min(1, 2·L·t_pd / tr). Bu bir üst sınır tahminidir; kesin değer için alan çözücü veya SI simülasyonu kullanın. Mesafeyi iki katına çıkarmak karışmayı yaklaşık dörtte birine indirir; düzleme yaklaşmak da aynı etkiyi verir.',
+    xt_dgAria: 'Saldırgan ve kurban izlerin kesiti: s, w, D ve H ölçüleri ile kuplaj alan çizgileri',
+    xt_dgAggr: 'saldırgan',
+    xt_dgVictim: 'kurban',
   },
   en: {
     xt_structure: 'Structure',
@@ -71,14 +75,90 @@ const strings = {
     xt_3w: '3W rule (centre-to-centre ≥ 3w)',
     xt_target_ok: 'Below the target crosstalk',
     xt_note: 'H. Johnson: crosstalk ≈ K / (1 + (D/H)²), with D the centre-to-centre distance and H the height above the plane; trace width and thickness do not appear. Per D. Brooks, for stripline H = Ha·Hb/(Ha+Hb) and K = min(1, 2·L·t_pd / tr). This is an upper-bound estimate; use a field solver or SI simulation for exact values. Doubling the spacing cuts crosstalk to about a quarter; moving closer to the plane does the same.',
+    xt_dgAria: 'Cross-section of the aggressor and victim traces with the s, w, D and H dimensions and coupling field lines',
+    xt_dgAggr: 'aggressor',
+    xt_dgVictim: 'victim',
   },
 };
+
+/**
+ * Live cross-section (roughly to scale; very thin layers are drawn at a
+ * minimum size). Dashed field lines from the aggressor reach the victim
+ * (coupling) and the plane (return path): a closer plane or a wider spacing
+ * keeps more of the field away from the victim.
+ */
+function diagram(v, u, r) {
+  const strip = isStrip(v);
+  const mmOf = (k) => (Number.isFinite(v[k]) && v[k] > 0 ? toMm(v[k], u[k]) : NaN);
+  const dims = { w: mmOf('w'), s: mmOf('s'), ha: mmOf('h'), hb: strip ? mmOf('h2') : 1 };
+  const ok = Object.values(dims).every(Number.isFinite);
+  const w = ok ? dims.w : 0.2;
+  const s = ok ? dims.s : 0.2;
+  const ha = ok ? dims.ha : 0.1;
+  const hb = strip ? (ok ? dims.hb : 0.2) : 0;
+  const lenS = (mm) => (Number.isFinite(mm)
+    ? (isImperial() ? `${fmt(fromMm(mm, 'mil'), 3)} mil` : `${fmt(mm, 3)} mm`)
+    : '?');
+  const k = Math.min(190 / (2 * w + s), 52 / Math.max(ha, hb));
+  const wp = Math.max(18, w * k);
+  const sp = Math.max(12, s * k);
+  const hap = Math.max(22, ha * k);
+  const hbp = strip ? Math.max(22, hb * k) : 0;
+  const aL = 220 - (2 * wp + sp) / 2;
+  const aR = aL + wp;
+  const vL = aR + sp;
+  const vR = vL + wp;
+  const aC = (aL + aR) / 2;
+  const vC = (vL + vR) / 2;
+  const pTh = 6;
+  const tTop = strip ? 56 + hbp : 56;
+  const tBot = tTop + 8;
+  const tMid = tTop + 4;
+  const lp = tBot + hap; // lower plane top
+  let b = '';
+  // Layers
+  if (strip) b += rect(30, 56, 380, lp - 56, 'diel') + rect(30, 50, 380, pTh, 'cu');
+  else b += rect(30, tBot, 380, hap, 'diel');
+  b += rect(30, lp, 380, pTh, 'cu');
+  // Field lines: to the victim (coupling) and to the plane(s) (return path).
+  b += path(`M${aR - 3},${tTop}Q${(aR + vL) / 2},${tTop - 16} ${vL + 3},${tTop}`, 'wave2')
+    + path(`M${aR},${tMid}H${vL}`, 'wave2')
+    + path(`M${aR - 3},${tBot}Q${(aR + vL) / 2},${tBot + hap * 0.9} ${vL + 3},${tBot}`, 'wave2')
+    + path(`M${aL + wp * 0.3},${tBot}V${lp}M${aL + wp * 0.7},${tBot}V${lp}`, 'ext');
+  if (strip) b += path(`M${aL + wp * 0.3},${tTop}V56M${aL + wp * 0.7},${tTop}V56`, 'ext');
+  // Traces
+  b += rect(aL, tTop, wp, 8, 'cu') + rect(vL, tTop, wp, 8, 'cu')
+    + text(aL - 16, tMid + 4, t('xt_dgAggr'), { anchor: 'end' })
+    + text(vR + 10, tMid + 4, t('xt_dgVictim'), { anchor: 'start' })
+    + text(vR + 10, tMid + 20, `NEXT ≈ ${r ? `${fixed(r.fraction * 100, 2)} %` : '?'}`, { cls: 'val', anchor: 'start' });
+  // Dimensions
+  b += path(`M${aC},${tTop}V18M${vC},${tTop}V18`, 'ext')
+    + dimH(aC, vC, 18, `D = ${lenS(r?.D)}`, { cls: 'val' })
+    + dimH(aR, vL, 40, `s = ${lenS(dims.s)}`, { cls: 'val', extFrom: tTop })
+    + dimH(vL, vR, 40, '', { extFrom: tTop })
+    + text(Math.max(vR + 6, (aR + vL) / 2 + 42), 44, `w = ${lenS(dims.w)}`, { cls: 'val', anchor: 'start' });
+  if (strip) {
+    b += dimV(tBot, lp, aL - 10, `Ha = ${lenS(dims.ha)}`, { left: true, cls: 'val' })
+      + dimV(56, tTop, aL - 10, `Hb = ${lenS(dims.hb)}`, { left: true, cls: 'val' });
+  } else {
+    b += dimV(tBot, lp, aL - 10, `H = ${lenS(dims.ha)}`, { left: true, cls: 'val' });
+  }
+  const foot = r
+    ? `${strip ? `H = Ha·Hb/(Ha+Hb) = ${lenS(r.H)}  ·  ` : ''}D/H = ${fmt(r.dOverH, 3)}  ·  K = ${fmt(r.k, 3)}`
+    : '';
+  if (foot) b += text(220, lp + pTh + 22, foot, { cls: 'title' });
+  // Fixed height per structure; the drawing is centred vertically in it.
+  const H = strip ? 206 : 156;
+  const dy = Math.max(0, (H - (lp + pTh + 28)) / 2);
+  return svg(440, H, `<g transform="translate(0,${Math.round(dy)})">${b}</g>`, t('xt_dgAria'), { wide: true });
+}
 
 const LEN = ['mm', 'mil', 'um'];
 const len = (mm) => (isImperial() ? `${fixed(fromMm(mm, 'mil'), 2)} mil` : `${fixed(mm, 3)} mm`);
 const isStrip = (v) => v.st === 'strip';
 
 export default {
+  diagram,
   id: 'crosstalk',
   strings,
   sections: [

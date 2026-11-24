@@ -1,7 +1,10 @@
 import { calculateVia } from '../engine/via.js';
-import { toMm, currentToA, riseToC, tempToC } from '../engine/units.js';
+import { toMm, fromMm, currentToA, riseToC, tempToC } from '../engine/units.js';
 import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
+import { t, locale } from '../i18n.js';
+import { isImperial } from '../prefs.js';
+import { svg, rect, path, text, dimH, dimV, arrow, callout } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -48,6 +51,13 @@ const strings = {
     warn_aspectRatioElevated: 'En-boy oranı 8:1’in üzerinde; üreticinizin kapasitesini doğrulayın.',
     warn_platingThin: 'Kaplama 20 µm’nin altında; IPC-6012 Sınıf 2 için ortalama ≥ 20 µm, Sınıf 3 için ≥ 25 µm beklenir.',
     warn_overCapacity: 'Via başına akım, seçilen sıcaklık artışındaki kapasiteyi aşıyor; via sayısını artırın.',
+    vi_dgAria: 'Via kesiti: kart kalınlığı L, delik d, kaplama t, pad D1, düzlemlerdeki antipad D2, kullanılmayan saplama ve viaların içinden geçen akım; altta akımın kapasiteye oranı',
+    vi_dgScale: 'ölçekli',
+    vi_dgScaleExag: 'ölçekli · kaplama büyütülmüş',
+    vi_dgNoScale: 'ölçeksiz',
+    vi_dgStub: 'saplama',
+    vi_dgCap: 'kapasite',
+    vi_dgLoad: 'yük',
   },
   en: {
     vi_drill: 'Finished hole diameter (d)',
@@ -93,25 +103,166 @@ const strings = {
     warn_aspectRatioElevated: 'Aspect ratio above 8:1; confirm your fabricator’s capability.',
     warn_platingThin: 'Plating below 20 µm; IPC-6012 expects an average of ≥ 20 µm for Class 2 and ≥ 25 µm for Class 3.',
     warn_overCapacity: 'Current per via exceeds the capacity at the chosen temperature rise; add vias.',
+    vi_dgAria: 'Via cross-section: board thickness L, drill d, plating t, pad D1, plane antipad D2, the unused stub and the current flowing through the vias; below, current as a share of capacity',
+    vi_dgScale: 'to scale',
+    vi_dgScaleExag: 'to scale · plating exaggerated',
+    vi_dgNoScale: 'not to scale',
+    vi_dgStub: 'stub',
+    vi_dgCap: 'capacity',
+    vi_dgLoad: 'load',
   },
 };
 
 const LEN = ['mm', 'mil'];
 
-function diagram() {
-  return `
-  <svg class="diagram" viewBox="0 0 380 120" role="img" aria-label="via">
-    <rect class="diel" x="30" y="22" width="320" height="76"/>
-    <rect class="cu" x="30" y="56" width="110" height="5"/><rect class="cu" x="240" y="56" width="110" height="5"/>
-    <rect class="cu" x="140" y="14" width="100" height="8"/><rect class="cu" x="140" y="98" width="100" height="8"/>
-    <rect class="hole" x="172" y="14" width="36" height="92"/>
-    <rect class="cu" x="168" y="14" width="4" height="92"/><rect class="cu" x="208" y="14" width="4" height="92"/>
-    <path class="dim" d="M172 112h36"/><text x="190" y="118" style="font-size:11px">d</text>
-    <path class="dim" d="M140 9h100"/><text x="190" y="8" style="font-size:11px">D1</text>
-    <path class="dim" d="M140 66h-0M140 52h100" /><text x="250" y="50" class="lbl" text-anchor="start">D2</text>
-    <path class="dim" d="M360 22v76"/><text x="368" y="64">L</text>
-    <path class="dim" d="M212 30h14"/><text x="232" y="34" style="font-size:11px">t</text>
-  </svg>`;
+const lenTxt = (mm) => (isImperial() ? `${fmt(fromMm(mm, 'mil'), 3)} mil` : `${fmt(mm, 3)} mm`);
+const platTxt = (mm) => (isImperial() ? `${fmt(fromMm(mm, 'mil'), 2)} mil` : `${fmt(mm * 1000, 3)} µm`);
+const pctTxt = (x) => new Intl.NumberFormat(locale(), { style: 'percent', maximumFractionDigits: 0 }).format(x);
+
+/** Spread label baselines at least `gap` apart (order kept) inside [lo, hi]; sets `ty`. */
+function spread(items, gap, lo, hi) {
+  const s = [...items].sort((a, b) => a.y - b.y);
+  s.forEach((it, i) => { it.ty = Math.max(it.y, i ? s[i - 1].ty + gap : lo); });
+  for (let i = s.length - 1; i >= 0; i--) {
+    const cap = i === s.length - 1 ? hi : s[i + 1].ty - gap;
+    if (s[i].ty > cap) s[i].ty = cap;
+  }
+  return s;
+}
+
+/**
+ * Live cross-section: board thickness L, drill d, plating t, pads D1, plane
+ * antipads D2, the unused stub, the current path through n vias and the
+ * capacity meter. Drawn to scale where possible (plating is exaggerated).
+ */
+function diagram(v, u, r) {
+  const num = (k) => (Number.isFinite(v[k]) && v[k] > 0 ? toMm(v[k], u[k]) : NaN);
+  const live = Number.isFinite;
+  const dIn = num('d'); const LIn = num('L'); const tIn = num('p');
+  const D1In = num('pad'); const D2In = num('ap'); const stubIn = num('stub');
+  const d = live(dIn) ? dIn : 0.3;
+  const L = live(LIn) ? LIn : 1.6;
+  const tp = live(tIn) ? tIn : 0.025;
+  const D1 = live(D1In) ? D1In : 0.6;
+  const apOk = live(D2In) && D2In > D1;
+  const D2 = apOk ? D2In : D1 * 1.6;
+  const n = r ? r.count : 1;
+  const nDraw = Math.min(n, 6);
+
+  // Geometry (viewBox units). One scale for heights and widths; several vias
+  // are squeezed horizontally only when they would not fit (then not to scale).
+  const BL = 86; const BR = 306; const TOP0 = 44; const HMAX = 116;
+  const GL = BL + 4; const GR = BR - 44; // via group area (room for the exit arrow)
+  const maxW = Math.max(D1, D2, d + 2 * tp);
+  const sy = Math.min(HMAX / L, 150 / maxW);
+  let scaled = true;
+  let sx = sy;
+  if (nDraw * maxW * sy + 10 * (nDraw - 1) > GR - GL) {
+    sx = (GR - GL - 10 * (nDraw - 1)) / (nDraw * maxW);
+    scaled = false;
+  }
+  const keep = (px, min) => { if (px < min - 0.5) { scaled = false; return min; } return Math.max(px, min); };
+  const H = keep(L * sy, 48);
+  const hole = keep(d * sx, 6);
+  const tpx = Math.max(tp * sx, 2.5);
+  const exag = tp * sx < 2.5;
+  const padW = keep(D1 * sx, hole + 2 * tpx);
+  const apW = keep(D2 * sx, padW + 6);
+  const pitch = apW + 10;
+  const cx = Array.from({ length: nDraw }, (_, i) => (GL + GR) / 2 + (i - (nDraw - 1) / 2) * pitch);
+  const first = cx[0];
+  const last = cx[nDraw - 1];
+  const top = TOP0 + (HMAX - H) / 2;
+  const bot = top + H;
+
+  // Unused stub: the signal leaves on an inner layer, the barrel below is the stub.
+  let exitY = null;
+  if (live(stubIn)) {
+    const f = 1 - stubIn / L;
+    const fc = Math.min(0.85, Math.max(0.15, f));
+    if (Math.abs(fc - f) > 1e-9) scaled = false;
+    exitY = top + fc * H;
+  }
+  const planes = [1 / 3, 2 / 3].map((f) => top + f * H).filter((y) => exitY === null || Math.abs(y - exitY) > 10);
+
+  let b = rect(BL, top, BR - BL, H, 'diel');
+  // Planes with an antipad clearance D2 around every via.
+  for (const y of planes) {
+    let x = BL;
+    for (const c of cx) {
+      const x2 = c - apW / 2;
+      if (x2 > x) b += rect(x, y - 1.5, x2 - x, 3, 'cu');
+      x = c + apW / 2;
+    }
+    if (BR > x) b += rect(x, y - 1.5, BR - x, 3, 'cu');
+  }
+  if (exitY !== null) cx.forEach((c) => { b += rect(c - padW / 2 - 3, exitY, padW + 6, bot + 5 - exitY, 'zone-bad'); });
+  // Surface copper: top trace into the pads, bottom pads, exit trace.
+  b += rect(BL, top - 3, last - BL, 3, 'cu');
+  cx.forEach((c) => { b += rect(c - padW / 2, top - 4, padW, 4, 'cu') + rect(c - padW / 2, bot, padW, 4, 'cu'); });
+  if (exitY === null) b += rect(first, bot, BR - first, 3, 'cu');
+  else {
+    b += rect(first, exitY - 1.5, BR - first, 3, 'cu');
+    cx.forEach((c) => { b += rect(c - padW / 2, exitY - 1.5, padW, 3, 'cu'); });
+  }
+  // Drilled hole and plated barrel.
+  cx.forEach((c) => {
+    b += rect(c - hole / 2, top - 4, hole, H + 8, 'air')
+      + rect(c - hole / 2 - tpx, top - 4, tpx, H + 8, 'cu') + rect(c + hole / 2, top - 4, tpx, H + 8, 'cu');
+  });
+
+  // Current path: in on the top trace, down every barrel, out on the exit layer.
+  const flow = { cls: 'flow', headCls: 'arrow flow' };
+  const yEnd = (exitY ?? bot) - 4;
+  if (yEnd - top > 18) cx.forEach((c) => { b += arrow(c, top + 2, c, yEnd, flow); });
+  b += arrow(14, top - 1.5, BL - 3, top - 1.5, flow);
+  b += exitY === null ? arrow(BR - 42, bot + 10, BR - 6, bot + 10, flow) : arrow(BR - 42, exitY - 7, BR - 6, exitY - 7, flow);
+  const I = r ? r.perViaA * r.count : 0;
+  b += I > 0
+    ? text(14, top + 13, `I = ${si(I, 'A', 3)}`, { cls: 'val', anchor: 'start' })
+      + (n > 1 ? text(14, top + 27, `${n} × ${si(r.perViaA, 'A', 3)}`, { cls: 'lbl', anchor: 'start' }) : '')
+    : text(14, top + 13, 'I', { cls: 'sym', anchor: 'start' });
+
+  // Dimensions on the first via; callouts on the right.
+  const lab = (sym, ok, val) => (ok ? `${sym} = ${val}` : sym);
+  const dcls = (ok) => (ok ? 'val' : 'sym');
+  b += dimH(first - padW / 2, first + padW / 2, top - 11, lab('D1', live(D1In), lenTxt(D1)), { cls: dcls(live(D1In)), extFrom: top - 4 });
+  b += dimH(first - hole / 2, first + hole / 2, bot + 15, lab('d', live(dIn), lenTxt(d)), { below: true, cls: dcls(live(dIn)), extFrom: bot + 4 });
+  if (n > nDraw) b += text(last, top - 16, `×${n}`, { cls: 'val' });
+  b += dimV(top, bot, BR + 10, '', { extFrom: BR });
+  const items = [
+    { y: (top + bot) / 2 + 4, px: BR + 10, py: (top + bot) / 2, s: lab('L', live(LIn), lenTxt(L)), cls: dcls(live(LIn)) },
+    { y: top + H * 0.12 + 4, px: last + hole / 2 + tpx / 2, py: top + H * 0.12, s: lab('t', live(tIn), platTxt(tp)), cls: dcls(live(tIn)) },
+  ];
+  if (planes.length) items.push({ y: planes[0] + 4, px: last + apW / 2, py: planes[0], s: lab('D2', apOk, lenTxt(D2)), cls: dcls(apOk) });
+  if (exitY !== null) {
+    const my = (exitY + bot) / 2;
+    b += dimV(exitY, bot, BR + 22, '', { extFrom: BR });
+    items.push({ y: my + 4, px: BR + 22, py: my, s: `${t('vi_dgStub')} ${lenTxt(stubIn)}`, cls: 'badt' });
+    if (r?.stub) items.push({ y: my + 17, s: `λ/4 ≈ ${si(r.stub.quarterWaveHz, 'Hz', 3)}`, cls: 'val' });
+  }
+  for (const it of spread(items, 14, top - 4, bot + 26)) {
+    b += it.px === undefined
+      ? text(BR + 32, it.ty, it.s, { cls: it.cls, anchor: 'start' })
+      : callout(it.px, it.py, BR + 32, it.ty, it.s, { cls: it.cls, anchor: 'start' });
+  }
+
+  // Capacity meter: total current against n × the per-via capacity.
+  if (r) {
+    const cap = r.totalCapacityA;
+    const full = Math.max(cap, I) || 1;
+    const W = BR - BL;
+    const over = I > cap;
+    b += rect(BL, 196, W, 8, 'soft', ' rx="2"');
+    if (I > 0) b += rect(BL, 196, Math.max(3, (W * I) / full), 8, over ? 'zone-bad' : 'zone-ok', ' rx="2"');
+    b += path(`M${BL + (W * cap) / full},192V208`, 'wire');
+    b += text(BR + 8, 204, `${t('vi_dgCap')} ${si(cap, 'A', 3)}`, { cls: 'val', anchor: 'start' });
+    b += text(14, 204, t('vi_dgLoad'), { cls: 'lbl', anchor: 'start' });
+    if (I > 0) b += text(BL - 6, 204, pctTxt(I / cap), { cls: over ? 'badt' : 'okt', anchor: 'end' });
+  }
+  const caption = !scaled ? 'vi_dgNoScale' : exag ? 'vi_dgScaleExag' : 'vi_dgScale';
+  b += text(436, 14, t(caption), { cls: 'title', anchor: 'end' });
+  return svg(440, 214, b, t('vi_dgAria'), { wide: true });
 }
 
 export default {

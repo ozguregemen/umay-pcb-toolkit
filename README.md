@@ -8,7 +8,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 | Area | Calculator | Method |
 |---|---|---|
-| Learn | **Learning path** | 12 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, impedance, signal integrity, PDN, thermal, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
+| Learn | **Learning path** | 13 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
 | PCB & IPC | **Trace width & current** | IPC-2152 baseline-chart fit with copper, board-thickness and plane modifiers; IPC-2221. Solves width, current or temperature rise; etch factor, plating, current density, AC resistance; DC losses; side-by-side comparison. |
 | | **Conductor spacing** | IPC-2221B Table 6-1 (B1–A7), > 500 V rule, inverse (spacing → voltage), mains-safety warning. |
 | | **Via** | DC resistance, IPC-2221 current capacity, thermal resistance, parallel vias, Johnson L/C, impedance and rise-time degradation. |
@@ -21,14 +21,16 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 | Power & thermal | **PDN & decoupling** | Target impedance, bulk capacitance, R-L-C capacitor bank impedance plot, plane capacitance. |
 | | **Thermal** | Junction temperature, θ chain, required heatsink, LDO dissipation. |
 | | **Routing between pads** | Traces between BGA/connector pads, diagonal channel, dog-bone via size. |
-| Signal integrity (more) | **Reflection & VSWR**, **RF attenuator** (Pi/T/bridged-T with standard values), **planar spiral inductor** (Mohan 1999) | — |
+| Signal integrity (more) | **Reflection & VSWR**, **RF attenuator** (Pi/T/bridged-T with standard values) | — |
+| RF & antennas | **Planar spiral inductor** | Mohan 1999 (square, hex, octagon, circle), to-scale drawing; NFC/RFID/wireless-power resonance: tuning capacitor, skin-effect AC resistance, coil Q, damping resistor for a target Q. |
+| | **PCB antenna** | Microstrip patch (Balanis transmission-line model: W, L, inset feed for 50 Ω, bandwidth, ground size) and quarter-wave monopole / IFA arm, with to-scale layout drawings. |
 | Power (more) | **DC-DC buck/boost** | Inductor, output capacitor, duty, peak current (TI SLVA477/372). |
 | Circuit basics | **Ohm's law**, **voltage divider** (incl. regulator feedback and tolerance analysis), **LED resistor**, **RC/RL/LC**, **E-series finder**, **colour & SMD codes**, **series/parallel**, **crystal load & PPM**, **555 timer** | Standard formulas with E-series value selection. |
 | Tools | **Unit converter** | Length, copper weight, temperature, dBm/W/V, dB, AWG. |
 
 See [docs/karsilastirma.md](docs/karsilastirma.md) for a comparison with Saturn PCB Toolkit, KiCad, Sierra Circuits, Polar, Rogers and others.
 
-Every result shows its formula, sources and validity warnings. Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout.
+Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs. Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout.
 
 See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineering review: what was wrong in earlier versions, the methods used now, how they were validated, and known limitations.
 

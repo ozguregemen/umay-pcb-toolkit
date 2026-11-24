@@ -2,8 +2,12 @@
 
 import { t } from '../i18n.js';
 import { esc, fmt } from '../ui/format.js';
+import { rect, circle, text, arrow, dimV } from '../ui/svg.js';
 
 const L = (k) => esc(t(k));
+
+/** Figure built with the diagram kit (src/ui/svg.js); the caption doubles as the label. */
+const fig = (w, h, captionKey, body) => `<figure class="fig"><svg class="diagram" viewBox="0 0 ${w} ${h}" role="img" aria-label="${L(captionKey)}">${body}</svg><figcaption>${L(captionKey)}</figcaption></figure>`;
 
 function stack(layers, title) {
   // layers: [{ kind: 'sig'|'gnd'|'pwr'|'core'|'pre'|'mask', label }]
@@ -105,6 +109,39 @@ const FIGS = {
     <rect x="180" y="70" width="60" height="22" fill="var(--surface)" stroke="none"/>
     <text class="lbl" x="210" y="42">${L('fg_clearance')}</text><text class="lbl" x="210" y="122">${L('fg_creepage')}</text>
   </svg><figcaption>${L('fg_creep')}</figcaption></figure>`,
+  'antenna-layout': () => {
+    const fence = Array.from({ length: 27 }, (_, i) => 27 + i * 14).filter((x) => Math.abs(x - 252) > 8 && Math.abs(x - 236) > 8)
+      .map((x) => circle(x, 67, 2, 'term')).join('');
+    return fig(420, 180, 'fg_antLayout',
+      rect(20, 20, 380, 150, 'soft', ' rx="3"')
+      + rect(20, 60, 380, 110, 'cu plane')
+      + fence
+      + '<path class="cutr" style="stroke-width:5" d="M236,60V32H392M252,60V32"/>'
+      + '<path class="cutr" style="stroke-width:4" d="M120,114H252V60"/>'
+      + rect(60, 92, 60, 44, 'comp', ' rx="3"') + text(90, 118, 'RF', { cls: 'name' })
+      + rect(178, 108, 14, 12, 'comp') + rect(164, 122, 10, 14, 'comp') + rect(196, 122, 10, 14, 'comp')
+      + text(185, 152, t('fg_antMatch'))
+      + text(150, 106, '50 Ω')
+      + text(118, 44, t('fg_antKeep'))
+      + text(322, 50, t('fg_antIfa'))
+      + text(24, 84, t('fg_antFence'), { anchor: 'start' })
+      + text(330, 152, t('fg_antGnd')));
+  },
+  'nfc-coupling': () => {
+    const turns = (x0, y, n) => Array.from({ length: n }, (_, i) => rect(x0 + i * 8, y, 5, 5, 'cu')).join('');
+    // Field lines pass through both coil openings and return outside the conductors.
+    return fig(420, 180, 'fg_nfc',
+      '<path class="wave2" d="M210,18C380,10 400,180 210,166M210,18C40,10 20,180 210,166"/>'
+      + arrow(210, 156, 210, 26, { cls: 'flow', headCls: 'arrow flow' })
+      + arrow(186, 150, 186, 32, { cls: 'flow', headCls: 'arrow flow' })
+      + arrow(234, 150, 234, 32, { cls: 'flow', headCls: 'arrow flow' })
+      + turns(150, 46, 3) + turns(249, 46, 3)
+      + turns(110, 132, 4) + turns(281, 132, 4)
+      + text(259, 38, t('fg_nfcTag'))
+      + text(295, 124, t('fg_nfcReader'))
+      + text(290, 92, t('fg_nfcField'))
+      + dimV(51, 132, 160, '1–5 cm', { left: true, cls: 'lbl' }));
+  },
 };
 
 export function figure(name) {
@@ -126,6 +163,10 @@ export const figureStrings = {
     fg_decapGood: 'kısa döngü, via pad yanında', fg_decapBad: 'uzun iz = yüksek endüktans',
     fg_creep: 'Clearance hava içinden en kısa mesafe, creepage yüzey boyunca en kısa yoldur; yüzeydeki yarık creepage’i uzatır.',
     fg_clearance: 'clearance (hava)', fg_creepage: 'creepage (yüzey, yarık ile)',
+    fg_antLayout: 'Kart kenarında IFA (ters F) anten: altında hiçbir katmanda bakır yok; toprak dökümü antenin karşı yarısıdır; beslemede π eşleştirme için yer bırakılır.',
+    fg_antMatch: 'π eşleştirme', fg_antKeep: 'bakırsız bölge (tüm katmanlar)', fg_antIfa: 'IFA anten kolu', fg_antFence: 'GND via çiti', fg_antGnd: 'toprak dökümü',
+    fg_nfc: 'NFC: okuyucu ve etiket bobinleri yakın alanda manyetik olarak kuple olur (gevşek kuplajlı transformatör). 13,56 MHz’te λ ≈ 22 m olduğundan küçük bobin ışıma yapmaz.',
+    fg_nfcTag: 'etiket bobini', fg_nfcReader: 'okuyucu bobini', fg_nfcField: 'manyetik alan',
   },
   en: {
     fg_mask: 'Solder mask', fg_sig: 'Signal', fg_sigPwr: 'Signal + power', fg_gndMostly: 'Mostly GND pour',
@@ -141,5 +182,9 @@ export const figureStrings = {
     fg_decapGood: 'short loop, via next to pad', fg_decapBad: 'long trace = high inductance',
     fg_creep: 'Clearance is the shortest path through air, creepage the shortest path along the surface; a slot lengthens creepage.',
     fg_clearance: 'clearance (air)', fg_creepage: 'creepage (surface, with slot)',
+    fg_antLayout: 'IFA (inverted-F) antenna on the board edge: no copper under it on any layer; the ground pour is the other half of the antenna; room is left for a π match at the feed.',
+    fg_antMatch: 'π match', fg_antKeep: 'copper-free zone (all layers)', fg_antIfa: 'IFA antenna arm', fg_antFence: 'GND via fence', fg_antGnd: 'ground pour',
+    fg_nfc: 'NFC: reader and tag coils couple magnetically in the near field (a loosely coupled transformer). At 13.56 MHz λ ≈ 22 m, so a small coil does not radiate.',
+    fg_nfcTag: 'tag coil', fg_nfcReader: 'reader coil', fg_nfcField: 'magnetic field',
   },
 };

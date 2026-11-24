@@ -3,7 +3,8 @@ import { decode, encode, decodeSmd, encodeSmd } from '../../src/engine/colorcode
 import { decadeValues } from '../../src/engine/eseries.js';
 import { attenuatorValues, analyseAttenuator } from '../../src/engine/attenuator.js';
 import { combine, effectiveLoad, equalLoadCaps, pullingPpm, ppmToHz, driftSeconds } from '../../src/engine/passives.js';
-import { planarInductor } from '../../src/engine/inductor.js';
+import { planarInductor, coilTuning } from '../../src/engine/inductor.js';
+import { patchAntenna, monopole } from '../../src/engine/antenna.js';
 import { fanout } from '../../src/engine/fanout.js';
 import { gammaFromLoad, fromGammaMag, gammaFromVswr, gammaFromReturnLoss } from '../../src/engine/rf.js';
 import { buck, boost } from '../../src/engine/dcdc.js';
@@ -120,5 +121,48 @@ export const cases = [
     near(chk.f, 1000, 1e-9); near(chk.duty, 0.6, 1e-9);
     near(monostable(100e3, 10e-9).t, 1.1e-3, 1e-12);
     ok(!astableDesign(1000, 0.4, 1e-8).ok, 'duty < 50 % rejected');
+  }],
+
+  ['patch antenna: Balanis example 14.1 (10 GHz, εr 2.2, h 1.588 mm)', () => {
+    const p = patchAntenna({ fHz: 10e9, er: 2.2, hMm: 1.588 });
+    near(p.wMm, 11.86, 2e-3); near(p.ereff, 1.972, 1e-3);
+    near(p.dLMm, 0.81, 5e-3); near(p.lMm, 9.06, 2e-3);
+    // h/λ0 = 0.053: just over the thin-substrate limit; PTFE so no loss warning
+    ok(p.warnings.includes('patchThick') && !p.warnings.includes('fr4Loss'), 'warnings');
+  }],
+
+  ['patch antenna: 2.45 GHz on FR-4 with 50 Ω inset feed', () => {
+    const p = patchAntenna({ fHz: 2.45e9, er: 4.4, hMm: 1.6 });
+    near(p.wMm, 37.234, 1e-4); near(p.ereff, 4.0809, 1e-4); near(p.lMm, 28.809, 1e-4);
+    near(p.rin, 306.80, 1e-4);
+    // y0 = (L/π)·acos(√(50/Rin)) — check by substituting back: Rin·cos²(πy0/L) = 50
+    near(p.rin * Math.cos((Math.PI * p.insetMm) / p.lMm) ** 2, 50, 1e-9);
+    near(p.bwFrac, 0.011189, 1e-3);
+    ok(p.warnings.includes('fr4Loss'), 'FR-4 loss warning');
+    ok(!patchAntenna({ fHz: 2.45e9, er: 1, hMm: 1.6 }).ok, 'εr ≤ 1 rejected');
+  }],
+
+  ['monopole: quarter wave in air and printed', () => {
+    const air = monopole({ fHz: 868e6, mode: 'wire' });
+    near(air.quarterMm, 299792458 / 868e6 / 4 * 1000, 1e-12);
+    near(air.quarterMm, 86.346, 1e-4);
+    const pr = monopole({ fHz: 2.45e9, er: 4.3, mode: 'printed' });
+    near(pr.eeff, 2.65, 1e-12); near(pr.quarterMm, 18.792, 1e-4); near(pr.quarterAirMm, 30.591, 1e-4);
+  }],
+
+  ['coil tuning: 13.56 MHz NFC, skin effect and damping', () => {
+    const L = planarInductor({ shape: 'square', turns: 5, widthMm: 0.2, spaceMm: 0.2, outerMm: 10, thicknessUm: 35 });
+    const r = coilTuning({ L: L.lSheet, rDc: L.rDc, thicknessUm: 35, fHz: 13.56e6, cParF: 5e-12, qTarget: 30 });
+    const w = 2 * Math.PI * 13.56e6;
+    near(1 / Math.sqrt(L.lSheet * r.cTotal), w, 1e-12);
+    near(r.cExt, r.cTotal - 5e-12, 1e-12);
+    near(r.deltaUm, 18.12, 2e-3);
+    ok(r.rAc > L.rDc, 'R_ac > R_dc');
+    near(r.xl / (r.rAc + r.rDamp), 30, 1e-12);
+    near(r.bw, 13.56e6 / 30, 1e-12);
+    // Low frequency limit: δ ≫ t ⇒ R_ac → R_dc
+    const lo = coilTuning({ L: 1e-6, rDc: 1, thicknessUm: 35, fHz: 10 });
+    near(lo.rAc, 1, 1e-3);
+    ok(coilTuning({ L: 1e-6, rDc: 1, fHz: 125e3, qTarget: 30 }).warnings.includes('lfCoil'), 'LF warning');
   }],
 ];

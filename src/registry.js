@@ -40,6 +40,8 @@ export const TOOLS = [
     load: () => import('./pages/attenuator.js') },
   { id: 'inductor', cat: 'si', icon: 'spiral', keywords: 'planar inductor spiral bobin endüktör pcb coil wheeler mohan nfc',
     load: () => import('./pages/inductor.js') },
+  { id: 'antenna', cat: 'si', icon: 'antenna', keywords: 'antenna anten patch yama monopole monopol ifa dipole dipol 2.4 ghz ble wifi lora 433 868 915 rf ism',
+    load: () => import('./pages/antenna.js') },
   { id: 'pdn', cat: 'power', icon: 'pdn', keywords: 'pdn decoupling dekuplaj target impedance hedef empedans capacitor kondansatör esl esr bulk',
     load: () => import('./pages/pdn.js') },
   { id: 'dcdc', cat: 'power', icon: 'dcdc', keywords: 'dc-dc buck boost converter dönüştürücü regulator regülatör inductor bobin ripple dalgalanma smps',

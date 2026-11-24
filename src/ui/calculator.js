@@ -272,7 +272,8 @@ function actionButton(action, iconName, labelKey, titleKey) {
 
 /**
  * Mount a calculator page into `root`.
- * page: { id, sections, compute(v, units), render(result, v, units), diagram?(v, units), intro? }
+ * page: { id, sections, compute(v, units), render(result, v, units),
+ *         diagram?(v, units, result) — result is undefined while inputs are invalid, intro? }
  */
 export function mountCalculator(root, page, params) {
   let state = initialState(page, params);
@@ -345,11 +346,21 @@ export function mountCalculator(root, page, params) {
       }
     });
 
-    const diagram = page.diagram ? `<div class="diagram-wrap">${page.diagram(v, state.units)}</div>` : '';
+    // Diagrams receive the result too (undefined while inputs are invalid) so
+    // they can draw live values; a failing diagram never breaks the page.
+    const res = invalid ? undefined : page.compute(v, state.units);
+    let diagram = '';
+    if (page.diagram) {
+      try {
+        const svg = page.diagram(v, state.units, res?.ok === false ? undefined : res);
+        if (svg) diagram = `<div class="diagram-wrap">${svg}</div>`;
+      } catch (err) {
+        console.error(err);
+      }
+    }
     if (invalid) {
       result.innerHTML = `${diagram}<p class="msg-empty">${icon('alert', 18)} ${esc(t('inputsInvalid'))}</p>`;
     } else {
-      const res = page.compute(v, state.units);
       result.innerHTML = diagram + page.render(res, v, state.units);
     }
     const hero = result.querySelector('.hero');

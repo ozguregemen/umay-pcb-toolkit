@@ -314,6 +314,10 @@ select.unit { cursor: pointer; }
 .diagram-wrap { margin: -4px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .diagram { width: 100%; max-width: 420px; height: auto; display: block; margin: 0 auto; }
 .diagram .cu { fill: var(--cu); }
+.diagram .cu.plane { opacity: .3; }
+.diagram .rad { stroke: var(--focus); stroke-width: 3; fill: none; stroke-linecap: round; }
+.diagram .cutr { stroke: var(--cu); fill: none; stroke-linecap: butt; }
+.diagram .bridge { stroke: var(--focus); fill: none; stroke-dasharray: 4 3; stroke-linecap: butt; }
 .diagram .diel { fill: var(--diel); }
 .diagram .mask { fill: var(--mask); opacity: .55; }
 .diagram .hole { fill: var(--surface); stroke: var(--border-strong); }
@@ -486,3 +490,34 @@ a.btn { text-decoration: none; }
 /* Respect explicit SVG text anchors (the generic rule above centres labels). */
 .diagram text[text-anchor="start"] { text-anchor: start; }
 .diagram text[text-anchor="end"] { text-anchor: end; }
+
+/* ---------- Diagram kit (src/ui/svg.js) ---------- */
+.diagram.wide { max-width: 560px; }
+.diagram .wire { stroke: var(--text); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.diagram .comp { stroke: var(--text); stroke-width: 1.6; fill: var(--surface); }
+.diagram .comp.hi, .diagram .wire.hi { stroke: var(--accent); }
+.diagram .node { fill: var(--text); }
+.diagram .term { fill: var(--surface); stroke: var(--text); stroke-width: 1.6; }
+.diagram .arrow { fill: var(--text); stroke: none; }
+.diagram .arrow.flow { fill: var(--focus); }
+.diagram .flow { stroke: var(--focus); stroke-width: 1.6; fill: none; }
+.diagram .dimline { stroke: var(--muted); stroke-width: 1; fill: none; }
+.diagram .ext { stroke: var(--faint); stroke-width: .8; stroke-dasharray: 2 2; fill: none; }
+.diagram .leader { stroke: var(--faint); stroke-width: .9; fill: none; }
+.diagram .dot { fill: var(--faint); }
+.diagram .axis { stroke: var(--border-strong); stroke-width: 1; fill: none; }
+.diagram .grid-l { stroke: var(--border); stroke-width: .8; fill: none; }
+.diagram .wave { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.diagram .wave2 { stroke: var(--focus); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.diagram .good { stroke: var(--ok-fg); }
+.diagram .bad { stroke: var(--err-fg); }
+.diagram .zone-ok { fill: var(--ok-bg); stroke: var(--ok-bd); }
+.diagram .zone-bad { fill: var(--err-bg); stroke: var(--err-bd); }
+.diagram .zone { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: none; }
+.diagram .soft { fill: var(--surface-2); stroke: var(--border-strong); }
+.diagram text.name { font: 600 12px/1 system-ui, sans-serif; fill: var(--text); font-style: normal; }
+.diagram text.val { font: 650 12px/1 system-ui, sans-serif; fill: var(--accent-strong); font-style: normal; }
+.diagram text.title { font: 600 11.5px/1 system-ui, sans-serif; fill: var(--muted); font-style: normal; letter-spacing: .02em; }
+.diagram text.sym { font: italic 600 12px/1 Georgia, serif; fill: var(--text); }
+.diagram text.okt { font: 600 11px/1 system-ui, sans-serif; fill: var(--ok-fg); font-style: normal; }
+.diagram text.badt { font: 600 11px/1 system-ui, sans-serif; fill: var(--err-fg); font-style: normal; }

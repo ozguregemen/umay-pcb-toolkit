@@ -1,6 +1,7 @@
 import { ohmsLaw, OHM_PAIRS, powerRating } from '../engine/circuit.js';
 import { heroes, rows, block, formulaBlock } from '../ui/calculator.js';
 import { si, siHtml, fmt, esc } from '../ui/format.js';
+import { svg, twoTerm, wire, arrow, text } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
 const strings = {
@@ -14,6 +15,7 @@ const strings = {
     ohm_ratingNone: '2 W üstü — güç direnci gerekir',
     ohm_details: 'Ayrıntılar',
     ohm_note: 'Hesap DC ya da RMS değerler içindir. Direnç güç sınıfı, harcanan gücün en az iki katını karşılayan ilk standart değerdir (1/16 … 2 W).',
+    ohm_dg: 'Ohm yasası devresi: gerilim kaynağı ve direnç; girilen değerler düz, hesaplananlar renkli yazılır',
   },
   en: {
     ohm_pair: 'Two known values',
@@ -25,6 +27,7 @@ const strings = {
     ohm_ratingNone: 'above 2 W — use a power resistor',
     ohm_details: 'Details',
     ohm_note: 'Valid for DC or RMS values. The resistor rating is the first standard value covering at least twice the dissipation (1/16 … 2 W).',
+    ohm_dg: 'Ohm’s law circuit: voltage source and resistor; given values in plain text, calculated values in colour',
   },
 };
 
@@ -36,7 +39,40 @@ const ratingLabel = (w) => {
   return w < 1 ? `1/${Math.round(1 / w)} W` : `${fmt(w)} W`;
 };
 
+const UNIT = { V: 'V', I: 'A', R: 'Ω', P: 'W' };
+const val = (x, unit) => (Number.isFinite(x) && x > 0 ? si(x, unit, 3) : '?');
+
+/**
+ * Live schematic: source V drives current I through R, which dissipates P.
+ * The two given quantities are drawn in plain text, the calculated two in the
+ * accent colour, each tagged "given" / "calculated" like the result cards.
+ */
+function diagram(v, u, r) {
+  const given = (q) => v.pair.includes(q);
+  const num = (q) => (r ? r[q] : given(q) ? v[q] : NaN);
+  const label = (q, x, y, anchor) => {
+    const g = given(q);
+    return text(x, y, `${q} = ${val(num(q), UNIT[q])}`, { cls: g ? 'name' : 'val', anchor })
+      + text(x, y + 14, t(g ? 'ohm_given' : 'ohm_calc'), { cls: 'lbl', anchor });
+  };
+  const xs = 130; // source
+  const xr = 300; // resistor
+  const yt = 22;
+  const yb = 132;
+  const body = twoTerm('V', xs, yt, xs, yb)
+    + wire([xs, yt], [xr, yt]) + twoTerm('R', xr, yt, xr, yb) + wire([xs, yb], [xr, yb])
+    + arrow(180, yt + 16, 250, yt + 16, { cls: 'flow', headCls: 'arrow flow' })
+    + label('V', xs - 24, yt + 51, 'end')
+    + label('I', 215, yt + 40, 'middle')
+    + label('R', xr + 18, yt + 36, 'start')
+    + label('P', xr + 18, yt + 76, 'start')
+    + text(160, yb + 32, 'V = I · R', { cls: 'sym' })
+    + text(280, yb + 32, 'P = V · I', { cls: 'sym' });
+  return svg(440, yb + 42, body, t('ohm_dg'), { wide: true });
+}
+
 export default {
+  diagram,
   id: 'ohm',
   strings,
   sections: [

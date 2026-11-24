@@ -4,6 +4,7 @@ import { hero, rows, block, formulaBlock, messages, invalid } from '../ui/calcul
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
+import { svg, rect, circle, path, poly, text, dimH, dimV, arrow } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -77,6 +78,19 @@ const strings = {
     warn_ipc2221ThicknessRange: 'IPC-2221 grafikleri 0,5–3 oz bakır için geçerlidir.',
     warn_ipc2221WidthRange: 'Genişlik IPC-2221 grafiklerinin kapsamını (400 mil) aşıyor.',
     warn_ipc2221ExtraDerate: 'IPC-2221: 0,8 mm ve daha ince kartta veya ≥ 108 µm bakırda akımı ayrıca %15 düşürün.',
+    tw_dgAria: 'İz kesiti: genişlik W (aşındırmayla yamuk), bakır kalınlığı t ve kaplama, dielektrik, varsa d mesafesindeki düzlem ve ısının düzleme ya da karta yayılışı; akım I ve sıcaklık artışı ΔT',
+    tw_dgScale: 'kesit ölçekli',
+    tw_dgScaleExag: 'ölçekli · t büyütülmüş',
+    tw_dgNoScale: 'ölçeksiz',
+    tw_dgHeatPlane: 'ısı düzleme geçip yayılır',
+    tw_dgHeatBoard: 'ısı karta yayılır',
+    tw_dgHeatInt: 'ısı laminata yayılır',
+    tw_dgPlane: 'düzlem',
+    tw_dgBoard: 'kart',
+    tw_dgExt: 'dış katman',
+    tw_dgInt: 'iç katman',
+    tw_dgEtch: 'aşındırma',
+    tw_dgPlate: 'kaplama',
   },
   en: {
     tw_modeWidth: 'Width',
@@ -149,6 +163,19 @@ const strings = {
     warn_ipc2221ThicknessRange: 'IPC-2221 charts are valid for 0.5–3 oz copper.',
     warn_ipc2221WidthRange: 'Width exceeds the IPC-2221 chart range (400 mil).',
     warn_ipc2221ExtraDerate: 'IPC-2221: derate current a further 15 % for boards 0.8 mm or thinner or copper ≥ 108 µm.',
+    tw_dgAria: 'Trace cross-section: width W (a trapezoid when etched), copper thickness t and plating, the dielectric, the optional plane at distance d and where the heat spreads; current I and temperature rise ΔT',
+    tw_dgScale: 'cross-section to scale',
+    tw_dgScaleExag: 'to scale · t exaggerated',
+    tw_dgNoScale: 'not to scale',
+    tw_dgHeatPlane: 'heat spreads in the plane',
+    tw_dgHeatBoard: 'heat spreads into the board',
+    tw_dgHeatInt: 'heat spreads into the laminate',
+    tw_dgPlane: 'plane',
+    tw_dgBoard: 'board',
+    tw_dgExt: 'external layer',
+    tw_dgInt: 'internal layer',
+    tw_dgEtch: 'etch',
+    tw_dgPlate: 'plating',
   },
 };
 
@@ -159,17 +186,128 @@ const Wh = (mil) => (isImperial()
   : `${fixed(mil * MM_PER_MIL, 3)} <span class="u">mm</span>`);
 const Wsub = (mil) => (isImperial() ? `${fixed(mil * MM_PER_MIL, 3)} mm` : `${fixed(mil, 2)} mil`);
 
-function diagram(v) {
-  const plane = is2152(v) && v.pl === 'yes';
-  return `
-  <svg class="diagram" viewBox="0 0 380 100" role="img" aria-label="trace">
-    <rect class="diel" x="30" y="40" width="320" height="${plane ? 40 : 52}"/>
-    ${plane ? '<rect class="cu" x="30" y="80" width="320" height="6"/><path class="dim" d="M60 48V80"/><text x="72" y="68">d</text>' : ''}
-    <rect class="cu" x="150" y="28" width="80" height="12"/>
-    <path class="dim" d="M150 20h80"/><text x="190" y="16">W</text>
-    <path class="dim" d="M240 28v12"/><text x="250" y="38">t</text>
-    <text class="lbl" x="344" y="${plane ? 74 : 86}" text-anchor="end">FR-4</text>
-  </svg>`;
+const lenTxt = (mm) => (isImperial() ? `${fmt(mm / MM_PER_MIL, 3)} mil` : `${fmt(mm, 3)} mm`);
+
+/** Spread label baselines at least `gap` apart (order kept) inside [lo, hi]; sets `ty`. */
+function spread(items, gap, lo, hi) {
+  const s = [...items].sort((a, b) => a.y - b.y);
+  s.forEach((it, i) => { it.ty = Math.max(it.y, i ? s[i - 1].ty + gap : lo); });
+  for (let i = s.length - 1; i >= 0; i--) {
+    const cap = i === s.length - 1 ? hi : s[i + 1].ty - gap;
+    if (s[i].ty > cap) s[i].ty = cap;
+  }
+  return s;
+}
+
+/**
+ * Live cross-section: the trace (etched trapezoid, foil + plating) on the
+ * dielectric, the optional plane at distance d and where the heat goes. W, t
+ * and d share one scale; the drawn width grows with the real width on a log
+ * scale so wider traces look wider.
+ */
+function diagram(v, u, r) {
+  const ok = !!r;
+  const two = is2152(v);
+  const plane = two && v.pl === 'yes';
+  const internal = !two && v.layer === 'int';
+  const mmOf = (k, def) => (Number.isFinite(v[k]) && v[k] > 0 ? toMm(v[k], u[k]) : def);
+  const Wmm = ok ? r.widthMm : mmOf('W', 0.5);
+  const tMm = ok ? r.totalThicknessMil * MM_PER_MIL : 0.035;
+  const platMm = ok && v.plt > 0 ? Math.min(v.plt / 1000, tMm) : 0;
+  const uMm = ok ? r.undercutMil * MM_PER_MIL : 0;
+  const dMm = mmOf('pd', 0.2);
+  const hMm = two ? mmOf('bt', NaN) : NaN;
+
+  const cx = 210; const surf = 100; const BL = 16; const BR = 424; const yBreak = 186;
+  let Wpx = Math.min(210, Math.max(36, 55 + 85 * Math.log10(Wmm / 0.1)));
+  // A deep plane shrinks the whole section (W too) so d still fits to scale.
+  if (plane && (dMm * Wpx) / Wmm > 58) Wpx = Math.max(30, (58 * Wmm) / dMm);
+  const s = Wpx / Wmm;
+  let scaled = true;
+  let tpx = tMm * s;
+  const exag = tpx < 3;
+  if (tpx > 44) { tpx = 44; scaled = false; } else if (tpx < 3) tpx = 3;
+  const upx = Math.min(tMm > 0 ? (uMm / tMm) * tpx : 0, Wpx / 2 - 3);
+  const platePx = tMm > 0 ? (platMm / tMm) * tpx : 0;
+  let dpx = dMm * s;
+  if (plane && (dpx < 10 || dpx > 58.5)) { dpx = Math.max(10, Math.min(58, dpx)); scaled = false; }
+  // The board must hold the plane (and stay visible).
+  let hpx = Number.isFinite(hMm) ? hMm * s : Infinity;
+  const hMin = plane ? dpx + 14 : 24;
+  if (hpx < hMin) { hpx = hMin; scaled = false; }
+  const yT = surf - tpx;
+  const xl = cx - Wpx / 2;
+  const xr = cx + Wpx / 2;
+  const planeY = surf + dpx;
+
+  // Board (with a break line when it continues below), plane, trace.
+  let b = '';
+  if (surf + hpx > yBreak) {
+    const zz = [];
+    for (let x = BR, i = 0; x > BL; x -= 12, i++) zz.push([x, yBreak + (i % 2 ? 3 : -3)]);
+    zz.push([BL, yBreak]);
+    b += poly([[BL, surf], [BR, surf], ...zz], 'diel') + poly(zz, 'dimline');
+  } else b += rect(BL, surf, BR - BL, hpx, 'diel');
+  if (internal) b += rect(BL, yT - 18, BR - BL, surf - yT + 18, 'diel');
+  if (plane) b += rect(BL, planeY, BR - BL, 5, 'cu');
+  b += poly([[xl, surf], [xr, surf], [xr - upx, yT], [xl + upx, yT]], 'cu');
+  if (platePx > 0.8) {
+    const ins = upx * ((tpx - platePx) / tpx);
+    b += path(`M${Math.round((xl + ins) * 10) / 10},${Math.round((yT + platePx) * 10) / 10}H${Math.round((xr - ins) * 10) / 10}`, 'dim');
+  }
+  if (tpx >= 12 && Wpx >= 30) b += circle(cx, surf - tpx / 2, 4.5, 'term') + circle(cx, surf - tpx / 2, 1.6, 'node');
+
+  // Heat: into the plane and along it, or fanning into the board.
+  const flow = { cls: 'flow', headCls: 'arrow flow' };
+  if (plane) {
+    if (dpx >= 18) [-1, 0, 1].forEach((k) => { b += arrow(cx + (k * Wpx) / 3, surf + 3, cx + (k * Wpx) / 3, planeY - 3, flow); });
+    b += arrow(xl - 2, planeY + 2.5, Math.max(BL + 8, xl - 70), planeY + 2.5, flow)
+      + arrow(xr + 2, planeY + 2.5, Math.min(BR - 8, xr + 70), planeY + 2.5, flow)
+      + text(BL + 6, planeY + 18, t('tw_dgHeatPlane'), { cls: 'lbl', anchor: 'start' });
+  } else {
+    [-1, 0, 1].forEach((k) => { b += arrow(cx + (k * Wpx) / 3, surf + 3, cx + k * (Wpx / 3 + 26), surf + 40, flow); });
+    b += text(cx, surf + 56, t(internal ? 'tw_dgHeatInt' : 'tw_dgHeatBoard'), { cls: 'lbl' });
+  }
+
+  // Dimensions: W above (drawn width = trapezoid base), t and d on the right.
+  const yW = (internal ? yT - 18 : yT) - 10;
+  b += dimH(xl, xr, yW, ok ? `W = ${lenTxt(Wmm)}` : 'W', { cls: ok ? 'val' : 'sym', extFrom: surf });
+  if (upx > 0.5) b += text(xl - 6, surf - 3, `${t('tw_dgEtch')} ${v.etch}`, { cls: 'lbl', anchor: 'end' });
+  const xT = xr + 10;
+  b += dimV(yT, surf, xT, '', { extFrom: xr });
+  const um = (mm) => (isImperial() ? fmt(mm / MM_PER_MIL, 3) : fmt(mm * 1000, 3));
+  const unit = isImperial() ? 'mil' : 'µm';
+  const items = [{ y: (yT + surf) / 2 + 4, s: ok ? `t = ${um(tMm - platMm)} ${unit}` : 't', cls: ok ? 'val' : 'sym' }];
+  if (platMm > 0) {
+    const pl = `+ ${um(platMm)} ${unit}`;
+    const plw = `${pl} ${t('tw_dgPlate')}`;
+    items.push({ y: (yT + surf) / 2 + 18, s: plw.length * 6.7 < 436 - xT - 7 ? plw : pl, cls: 'val' });
+  }
+  if (plane) {
+    b += dimV(surf, planeY, xT, '', { extFrom: xr });
+    const dOk = Number.isFinite(v.pd) && v.pd > 0;
+    items.push({ y: (surf + planeY) / 2 + 4, s: dOk ? `d = ${lenTxt(dMm)}` : 'd', cls: dOk ? 'val' : 'sym' });
+  }
+  // Labels that would sit on the plane move below it.
+  let floor = -Infinity;
+  for (const it of spread(items, 14, 24, yBreak - 4)) {
+    let y = Math.max(it.ty, floor);
+    if (plane && y + 3 > planeY - 1 && y - 11 < planeY + 6) y = planeY + 18;
+    b += text(xT + 7, y, it.s, { cls: it.cls, anchor: 'start' });
+    floor = y + 14;
+  }
+  if (plane) b += text(BL + 6, planeY - 4, t('tw_dgPlane'), { cls: 'lbl', anchor: 'start' });
+
+  // Current and temperature rise (inputs and results).
+  if (ok) {
+    b += text(14, 20, `I = ${si(r.currentA, 'A', 3)}`, { cls: 'val', anchor: 'start' })
+      + text(14, 36, `ΔT = ${fmt(r.deltaTC, 3)} °C`, { cls: 'val', anchor: 'start' });
+    if (r.margin > 1) b += text(14, 51, `${t('tw_designCurrent')}: ×${fmt(r.margin, 3)}`, { cls: 'lbl', anchor: 'start' });
+  }
+  const info = two ? (Number.isFinite(hMm) ? `${t('tw_dgBoard')} ${lenTxt(hMm)}` : '') : t(internal ? 'tw_dgInt' : 'tw_dgExt');
+  b += text(BL, 206, info, { cls: 'lbl', anchor: 'start' });
+  b += text(BR, 206, t(!scaled ? 'tw_dgNoScale' : exag ? 'tw_dgScaleExag' : 'tw_dgScale'), { cls: 'title', anchor: 'end' });
+  return svg(440, 212, b, t('tw_dgAria'), { wide: true });
 }
 
 export default {

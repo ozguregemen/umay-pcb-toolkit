@@ -1,7 +1,8 @@
 import { rcCircuit, rlCircuit, lcCircuit, reactance } from '../engine/circuit.js';
 import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
-import { t } from '../i18n.js';
+import { svg, twoTerm, wire, node, ground, terminal, arrow, dimH, text, axes, wave, path, circle } from '../ui/svg.js';
+import { t, getLang } from '../i18n.js';
 
 const FARAD = 'farad'; // 'F' would render as °F
 
@@ -43,6 +44,12 @@ const strings = {
     warn_rc_overdamped: 'Q < 0,5: devre aşırı sönümlüdür ve salınım yapmaz; f0 bir rezonans tepesi değil, karakteristik frekanstır.',
     warn_rc_highQ: 'Q > 100: gerçek bileşenlerde bu kadar yüksek Q’ya ulaşmak zordur; bobin DCR’si ve kondansatör ESR’sini seri R’ye ekleyin.',
     err_rc_needLC: 'L ya da C’den en az birini girin.',
+    rc_dgRc: 'RC alçak geçiren filtre ve basamak yanıtı: çıkış τ anında %63’e ulaşır, %10–90 yükselme 2,2τ sürer',
+    rc_dgRl: 'RL devresi ve akımın yükselişi: τ anında akım son değerinin %63’üne ulaşır',
+    rc_dgLc: 'Seri RLC devresi ve f0’daki rezonans tepesi',
+    rc_dgX: 'XL ve XC’nin frekansla değişimi (log–log); girilen frekans ve f0 kesişimi işaretli',
+    rc_dgRes: 'Rezonans eğrisi',
+    rc_dgIdeal: 'R = 0: ideal devre, Q → ∞',
   },
   en: {
     rc_modeX: 'Reactance',
@@ -81,6 +88,12 @@ const strings = {
     warn_rc_overdamped: 'Q < 0.5: the circuit is overdamped and does not ring; f0 is a characteristic frequency rather than a resonant peak.',
     warn_rc_highQ: 'Q > 100 is hard to reach with real components; include inductor DCR and capacitor ESR in the series R.',
     err_rc_needLC: 'Enter at least one of L or C.',
+    rc_dgRc: 'RC low-pass filter and step response: the output reaches 63 % at τ, the 10–90 % rise takes 2.2τ',
+    rc_dgRl: 'RL circuit and current rise: the current reaches 63 % of its final value at τ',
+    rc_dgLc: 'Series RLC circuit and the resonance peak at f0',
+    rc_dgX: 'XL and XC versus frequency (log–log) with the entered frequency and the f0 crossing marked',
+    rc_dgRes: 'Resonance curve',
+    rc_dgIdeal: 'R = 0: ideal circuit, Q → ∞',
   },
 };
 
@@ -105,7 +118,196 @@ const STEP_LINES = [
   't_r(10–90 %) = τ · ln 9 ≈ 2.197τ',
 ];
 
+// ---------------------------------------------------------------------------
+// Live diagrams
+// ---------------------------------------------------------------------------
+
+const val = (x, unit) => (Number.isFinite(x) && x > 0 ? si(x, unit, 3) : '?');
+/** Percent in the page language (%63 / 63 %). */
+const pc = (s) => (getLang() === 'tr' ? `%${s}` : `${s} %`);
+const FLOW = { cls: 'flow', headCls: 'arrow flow' };
+
+// Right-hand plot area shared by the RC / RL / LC diagrams.
+const PX = 252;
+const PY = 172;
+const PW = 170;
+const PH = 112;
+
+/** AC source (circle with a sine) between (x, y1) and (x, y2). */
+function acSource(x, y1, y2) {
+  const cy = (y1 + y2) / 2;
+  return wire([x, y1], [x, cy - 13]) + wire([x, cy + 13], [x, y2]) + circle(x, cy, 13, 'comp')
+    + path(`M${x - 7},${cy}q3.5,-7 7,0t7,0`, 'wire');
+}
+
+/** RC low-pass (Vin → R → C to GND → Vout) or RL (Vin → R → L to GND, current i). */
+function firstOrderSchematic(v, r, isRl) {
+  const y = 80;
+  let b = twoTerm('R', 28, y, 140, y, { name: 'R', value: val(isRl ? v.rlR : v.rcR, 'Ω') });
+  if (isRl) {
+    b += twoTerm('L', 140, y, 140, 160, { name: 'L', value: val(v.rlL, 'H') }) + ground(140, 160)
+      + arrow(124, 100, 124, 140, FLOW) + text(118, 124, 'i', { cls: 'sym', anchor: 'end' });
+  } else {
+    b += twoTerm('C', 140, y, 140, 160, { name: 'C', value: val(v.rcC, 'F') }) + ground(140, 160)
+      + wire([140, y], [200, y]) + node(140, y) + terminal(200, y, 'Vout', 'top');
+  }
+  return b + terminal(28, y, 'Vin', 'top')
+    + text(104, 196, `τ = ${isRl ? 'L / R' : 'R · C'} = ${val(r?.tau, 's')}`, { cls: 'val' })
+    + text(104, 212, `fc = ${val(r?.fc, 'Hz')}`, { cls: 'val' });
+}
+
+/** Step response 1 − e^(−t/τ) over 0…5τ with τ (63 %) and the 10–90 % rise marked. */
+function stepPlot(r, curve) {
+  const X = (k) => PX + (k / 5) * PW;
+  const Y = (p) => PY - p * PH;
+  const pts = [];
+  for (let i = 0; i <= 60; i++) {
+    const k = (i / 60) * 5;
+    pts.push([X(k), Y(1 - Math.exp(-k))]);
+  }
+  const k10 = Math.log(10 / 9);
+  const k90 = Math.LN10;
+  const yd = 44;
+  return text(PX + PW / 2, 16, t('rc_stepTitle'), { cls: 'title' })
+    + axes(PX, PY, PW + 8, PH + 6, { xLabel: 't' })
+    + path(`M${PX},${Y(1)}H${PX + PW}`, 'ext')
+    + path(`M${PX},${Y(0.632)}H${X(1)}V${PY}`, 'ext')
+    + path(`M${X(k10)},${Y(0.1)}V${yd}M${X(k90)},${Y(0.9)}V${yd}`, 'ext')
+    + wave(pts)
+    + circle(X(1), Y(0.632), 2.8, 'node') + circle(X(k10), Y(0.1), 2.2, 'node') + circle(X(k90), Y(0.9), 2.2, 'node')
+    + dimH(X(k10), X(k90), yd, `${pc('10–90')}: ${val(r?.rise, 's')}`, { cls: 'val' })
+    + text(PX - 5, Y(1) + 4, pc(100), { cls: 'lbl', anchor: 'end' })
+    + text(PX - 5, Y(0.632) + 4, pc(63), { cls: 'lbl', anchor: 'end' })
+    + text(X(1), PY + 14, 'τ', { cls: 'sym' })
+    + text(PX + PW, Y(1) + 22, curve, { cls: 'sym', anchor: 'end' });
+}
+
+/** Series R–L–C loop driven by an AC source. */
+function lcSchematic(v, r) {
+  const xs = 40;
+  const xc = 196;
+  const yt = 60;
+  const yb = 160;
+  const hasR = v.lcR > 0;
+  let b = acSource(xs, yt, yb);
+  b += hasR
+    ? twoTerm('R', xs, yt, 100, yt, { name: 'R', value: val(v.lcR, 'Ω') }) + twoTerm('L', 100, yt, xc, yt, { name: 'L', value: val(v.lcL, 'H') })
+    : twoTerm('L', xs, yt, xc, yt, { name: 'L', value: val(v.lcL, 'H') });
+  b += twoTerm('C', xc, yt, xc, yb, { name: 'C', value: val(v.lcC, 'F'), flip: true }) + wire([xc, yb], [xs, yb])
+    + arrow(146, 146, 96, 146, FLOW) + text(121, 139, 'I', { cls: 'sym' })
+    + text(118, 192, `f0 = 1 / (2π·√(L·C)) = ${val(r?.f0, 'Hz')}`, { cls: 'val' });
+  if (Number.isFinite(r?.q)) b += text(118, 209, `Q = ${fmt(r.q, 3)} · BW = ${val(r.bw, 'Hz')}`, { cls: 'val' });
+  else if (r) b += text(118, 209, t('rc_dgIdeal'), { cls: 'lbl' });
+  return b;
+}
+
+/** Normalised series-RLC current |I| around f0 (log f, ±0.6 decade), BW at −3 dB. */
+function resonancePlot(r) {
+  const span = 0.6;
+  const hasQ = Number.isFinite(r?.q);
+  const q = hasQ ? Math.min(30, Math.max(0.3, r.q)) : 30;
+  const X = (x) => PX + ((Math.log10(x) + span) / (2 * span)) * PW;
+  const Y = (p) => PY - p * PH;
+  const g = (x) => 1 / Math.sqrt(1 + q * q * (x - 1 / x) ** 2);
+  const pts = [];
+  for (let i = 0; i <= 400; i++) {
+    const x = 10 ** (-span + (2 * span * i) / 400);
+    pts.push([X(x), Y(g(x))]);
+  }
+  let b = text(PX + PW / 2, 16, t('rc_dgRes'), { cls: 'title' })
+    + axes(PX, PY, PW + 8, PH + 6, { xLabel: 'f' })
+    + text(PX - 5, Y(1) + 4, '|I|', { cls: 'sym', anchor: 'end' })
+    + path(`M${X(1)},${Y(1)}V${PY}`, 'ext') + wave(pts)
+    + text(X(1), PY + 14, 'f0', { cls: 'name' })
+    + text(X(1), Y(1) - 8, `f0 = ${val(r?.f0, 'Hz')}`, { cls: 'val' });
+  if (hasQ && r.q <= 30) {
+    const a = Math.sqrt(1 + 1 / (4 * q * q));
+    const xa = X(Math.max(a - 1 / (2 * q), 10 ** -span));
+    const xb = X(Math.min(a + 1 / (2 * q), 10 ** span));
+    const yb = Y(Math.SQRT1_2);
+    // −3 dB level and the bandwidth between the two −3 dB points.
+    b += path(`M${PX},${yb}H${xa}`, 'ext') + text(PX - 5, yb + 4, '−3 dB', { cls: 'lbl', anchor: 'end' })
+      + dimH(xa, xb, yb, '')
+      + (xb - xa >= 40
+        ? text(X(1) + 6, yb - 5, 'BW', { cls: 'sym', anchor: 'start' })
+        : text(xb + 18, yb + 4, 'BW', { cls: 'sym', anchor: 'start' }));
+  }
+  return b;
+}
+
+/** Log–log XL and XC versus f with the entered f and the f0 crossing marked. */
+function reactancePlot(v, r) {
+  const x0 = 64;
+  const y0 = 176;
+  const w = 336;
+  const h = 140;
+  const ok = !!r;
+  // Placeholder while inputs are invalid: L, C chosen for f = f0 = 1 kHz, Z0 = 1 Ω.
+  const L = ok ? v.xL : 1 / (2 * Math.PI * 1e3);
+  const C = ok ? v.xC : 1 / (2 * Math.PI * 1e3);
+  const f = ok ? v.xF : 1e3;
+  const hasL = L > 0;
+  const hasC = C > 0;
+  const xl = (fr) => 2 * Math.PI * fr * L;
+  const xc = (fr) => 1 / (2 * Math.PI * fr * C);
+  const f0 = hasL && hasC ? 1 / (2 * Math.PI * Math.sqrt(L * C)) : NaN;
+  const hasF0 = Number.isFinite(f0);
+  const center = hasF0 ? Math.sqrt(f * f0) : f;
+  const hs = Math.max(1.5, (hasF0 ? Math.abs(Math.log10(f / f0)) / 2 : 0) + 1); // half span, decades
+  const lo = center / 10 ** hs;
+  const hi = center * 10 ** hs;
+  const ys = [...(hasL ? [xl(lo), xl(hi)] : []), ...(hasC ? [xc(lo), xc(hi)] : [])];
+  const yLo = Math.log10(Math.min(...ys));
+  const yHi = Math.log10(Math.max(...ys));
+  const fx = (fr) => (Math.log10(fr) - Math.log10(lo)) / (2 * hs); // 0…1 across the plot
+  const X = (fr) => x0 + fx(fr) * w;
+  const Y = (x) => y0 - ((Math.log10(x) - yLo) / (yHi - yLo)) * h;
+  const clampX = (x) => Math.min(Math.max(x, x0 + 42), x0 + w - 42);
+
+  // Decade grid
+  let b = '';
+  for (let e = Math.ceil(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++) b += path(`M${X(10 ** e)},${y0}V${y0 - h}`, 'grid-l');
+  for (let e = Math.ceil(yLo); e <= Math.floor(yHi); e++) b += path(`M${x0},${Y(10 ** e)}H${x0 + w}`, 'grid-l');
+  b += axes(x0, y0, w, h)
+    + text(x0, y0 - h - 8, '|X|', { cls: 'sym' }) + text(x0 + w + 8, y0 + 14, 'f', { cls: 'sym', anchor: 'start' })
+    + text(x0 + w, y0 - h - 8, 'log–log', { cls: 'lbl', anchor: 'end' });
+  if (hasL) b += wave([[X(lo), Y(xl(lo))], [X(hi), Y(xl(hi))]], 'wave');
+  if (hasC) b += wave([[X(lo), Y(xc(lo))], [X(hi), Y(xc(hi))]], 'wave2');
+
+  // Legend above the plot: line style + the reactance at the entered f.
+  const items = [
+    hasL && { cls: 'wave', s: ok ? `XL = ${val(r.xl, 'Ω')}` : 'XL' },
+    hasC && { cls: 'wave2', s: ok ? `XC = ${val(r.xc, 'Ω')}` : 'XC' },
+  ].filter(Boolean);
+  const lx0 = items.length === 2 ? 106 : 176;
+  items.forEach((it, i) => {
+    const lx = lx0 + i * 118;
+    b += wave([[lx, y0 - h - 12], [lx + 22, y0 - h - 12]], it.cls) + text(lx + 28, y0 - h - 8, it.s, { cls: ok ? 'val' : 'name', anchor: 'start' });
+  });
+
+  // f0 crossing
+  if (hasF0) {
+    b += path(`M${X(f0)},${Y(xl(f0))}V${y0}`, 'ext') + circle(X(f0), Y(xl(f0)), 3, 'node')
+      + text(clampX(X(f0)), y0 + 28, ok ? `f0 = ${val(r.f0, 'Hz')}` : 'f0', { cls: ok ? 'val' : 'name' });
+  }
+  // Entered frequency: marker line with a dot on each reactance line.
+  const xF = X(f);
+  b += path(`M${xF},${y0}V${y0 - h}`, 'dimline');
+  if (hasL) b += circle(xF, Y(xl(f)), 3.4, 'node');
+  if (hasC) b += circle(xF, Y(xc(f)), 3.4, 'node');
+  b += text(clampX(xF), y0 + 14, ok ? `f = ${val(v.xF, 'Hz')}` : 'f', { cls: ok ? 'val' : 'name' });
+  return b;
+}
+
+function diagram(v, u, r) {
+  if (v.mode === 'x') return svg(440, 212, reactancePlot(v, r), t('rc_dgX'), { wide: true });
+  if (v.mode === 'lc') return svg(440, 218, lcSchematic(v, r) + resonancePlot(r), t('rc_dgLc'), { wide: true });
+  const isRl = v.mode === 'rl';
+  return svg(440, 218, firstOrderSchematic(v, r, isRl) + stepPlot(r, isRl ? 'i(t)' : 'Vout(t)'), t(isRl ? 'rc_dgRl' : 'rc_dgRc'), { wide: true });
+}
+
 export default {
+  diagram,
   id: 'rc',
   strings,
   sections: [

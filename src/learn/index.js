@@ -22,6 +22,7 @@ export const LESSONS = [
   { id: 'circuit-basics', part: 'basics', minutes: 12, tools: ['ohm', 'divider', 'led', 'rc', 'eseries', 'colorcode', 'combine', 'timer555'] },
   { id: 'impedance', part: 'advanced', minutes: 12, tools: ['signal', 'impedance', 'reflection'] },
   { id: 'signal-integrity', part: 'advanced', minutes: 12, tools: ['signal', 'crosstalk', 'reflection'] },
+  { id: 'rf-antennas', part: 'advanced', minutes: 12, tools: ['antenna', 'inductor', 'impedance', 'reflection'] },
   { id: 'pdn', part: 'advanced', minutes: 12, tools: ['pdn', 'dcdc'] },
   { id: 'thermal', part: 'advanced', minutes: 10, tools: ['thermal', 'via', 'trace'] },
   { id: 'dfm', part: 'advanced', minutes: 10, tools: ['ipcref', 'padstack', 'spacing'] },

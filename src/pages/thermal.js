@@ -2,6 +2,7 @@ import { ldoPower, junction } from '../engine/power.js';
 import { heroes, rows, block, formulaBlock, checks, invalid } from '../ui/calculator.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
+import { svg, twoTerm, wire, node, ground, text, arrow } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -39,6 +40,13 @@ const strings = {
     th_vinErr: 'Giriş gerilimi çıkıştan büyük olmalı.',
     err_ldoDropout: 'Giriş gerilimi çıkış geriliminden büyük olmalı.',
     th_note: 'Tek boyutlu ısıl direnç zinciri: Tj = Ta + P·Σθ. θJA kartın bakır alanına ve hava akışına çok bağlıdır; kritik tasarımlarda termal ölçüm veya simülasyonla doğrulayın.',
+    th_dgAria: 'Isıl direnç zinciri: bağlantıdan ortama düğüm sıcaklıkları ve güç akışı',
+    th_dgJ: 'bağlantı',
+    th_dgC: 'kılıf',
+    th_dgS: 'soğutucu',
+    th_dgA: 'ortam',
+    th_dgFlow: 'ısı akışı',
+    th_dgAnalogy: 'Elektrik benzetmesi: °C ↔ V · W ↔ A · °C/W ↔ Ω',
   },
   en: {
     th_psrc: 'Power dissipation',
@@ -75,14 +83,68 @@ const strings = {
     th_vinErr: 'Input voltage must exceed the output.',
     err_ldoDropout: 'Input voltage must be greater than the output voltage.',
     th_note: 'One-dimensional thermal-resistance chain: Tj = Ta + P·Σθ. θJA depends strongly on board copper area and airflow; verify critical designs by thermal measurement or simulation.',
+    th_dgAria: 'Thermal resistance chain: node temperatures from junction to ambient with the power flow',
+    th_dgJ: 'junction',
+    th_dgC: 'case',
+    th_dgS: 'sink',
+    th_dgA: 'ambient',
+    th_dgFlow: 'heat flow',
+    th_dgAnalogy: 'Electrical analogy: °C ↔ V · W ↔ A · °C/W ↔ Ω',
   },
 };
+
+/**
+ * Live thermal circuit drawn as its electrical analogue: the dissipated power
+ * P is a current source pushing heat through the θ resistors to the ambient,
+ * which acts like a fixed voltage. Each node shows its temperature.
+ */
+function diagram(v, u, r) {
+  const chain = isChain(v);
+  const P = r ? r.powerW : (isLdo(v) ? NaN : v.P);
+  const yT = 56;
+  const yG = 150;
+  const xs = chain ? [80, 170, 260, 350] : [80, 350];
+  const th = chain ? [['θJC', v.jc], ['θCS', v.cs], ['θSA', v.sa]] : [['θJA', v.ja]];
+  const keys = chain ? ['Tj', 'Tc', 'Ts', 'Ta'] : ['Tj', 'Ta'];
+  const desc = chain ? ['th_dgJ', 'th_dgC', 'th_dgS', 'th_dgA'] : ['th_dgJ', 'th_dgA'];
+  // Node temperatures from the junction down: each θ drops P·θ.
+  const temps = [];
+  if (r) {
+    let T = r.tj;
+    temps.push(T);
+    for (const [, x] of th) { T -= P * (x || 0); temps.push(T); }
+  }
+  const deg = (x) => (Number.isFinite(x) ? `${fixed(x, 1)} °C` : '?');
+  let b = twoTerm('I', 36, yG, 36, yT) + text(55, 101, 'P', { cls: 'name', anchor: 'start' })
+    + wire([36, yT], [xs[0], yT]) + wire([xs[xs.length - 1], yT], [404, yT])
+    + twoTerm('V', 404, yT, 404, yG, { name: 'Ta', flip: true })
+    + wire([36, yG], [404, yG]) + ground(220, yG) + node(220, yG);
+  th.forEach(([name, x], i) => {
+    const xa = xs[i];
+    const xb = xs[i + 1];
+    b += twoTerm('R', xa, yT, xb, yT)
+      + text((xa + xb) / 2, 79, name, { cls: 'name' })
+      + text((xa + xb) / 2, 93, Number.isFinite(x) ? `${fmt(x, 3)} °C/W` : '?', { cls: 'val' });
+  });
+  xs.forEach((x, i) => {
+    const over = i === 0 && r && r.margin < 0;
+    b += node(x, yT) + text(x, 26, `${keys[i]} · ${t(desc[i])}`)
+      + text(x, 42, deg(i === xs.length - 1 ? v.ta : temps[i]), { cls: over ? 'badt' : 'val' });
+  });
+  // Heat flows like a current from the junction to the ambient.
+  b += arrow(96, 110, 334, 110, { cls: 'flow', headCls: 'arrow flow' })
+    + text(209, 126, t('th_dgFlow'), { anchor: 'end' })
+    + text(215, 126, `P = ${Number.isFinite(P) ? `${fmt(P, 3)} W` : '?'}`, { cls: 'val', anchor: 'start' })
+    + text(220, 188, t('th_dgAnalogy'), { cls: 'title' });
+  return svg(440, 198, b, t('th_dgAria'), { wide: true });
+}
 
 const isLdo = (v) => v.ps === 'ldo';
 const isChain = (v) => v.path === 'chain';
 const KW = ['KW'];
 
 export default {
+  diagram,
   id: 'thermal',
   strings,
   sections: [

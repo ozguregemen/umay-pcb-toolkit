@@ -66,3 +66,30 @@ export function planarInductor(p) {
     warnings,
   };
 }
+
+/**
+ * Resonant tuning of a coil (NFC / RFID / wireless power).
+ *   C_total = 1 / ((2πf)²·L),   C_ext = C_total − C_par
+ *   δ = √(ρ / (π·f·µ0)),   R_ac ≈ R_dc · (t/δ) / (1 − e^(−t/δ))   (Yue & Wong)
+ *   Q_coil = ωL / R_ac,   R_damp = ωL / Q_target − R_ac
+ * Proximity effect between turns is not included (real R_ac is often 1.5–3× higher).
+ * @param {object} p  { L (H), rDc (Ω), thicknessUm, fHz, cParF?, qTarget?, tempC? }
+ */
+export function coilTuning({ L, rDc, thicknessUm = 35, fHz, cParF = 0, qTarget, tempC = 25 }) {
+  if (!(L > 0) || !(fHz > 0) || !(rDc > 0)) return null;
+  const w = 2 * Math.PI * fHz;
+  const xl = w * L;
+  const cTotal = 1 / (w * w * L);
+  const cExt = cTotal - (cParF > 0 ? cParF : 0);
+  const delta = Math.sqrt(copperResistivity(tempC) / (Math.PI * fHz * MU0));
+  const t = (thicknessUm > 0 ? thicknessUm : 35) * 1e-6;
+  const rAc = (rDc * (t / delta)) / (1 - Math.exp(-t / delta));
+  const qCoil = xl / rAc;
+  const rDamp = qTarget > 0 ? xl / qTarget - rAc : NaN;
+  const qEff = rDamp > 0 ? qTarget : qCoil;
+  const warnings = [];
+  if (!(cExt > 0)) warnings.push('cParTooBig');
+  if (qTarget > 0 && !(rDamp > 0)) warnings.push('qBelowTarget');
+  if (fHz < 1e6 && cExt > 10e-9) warnings.push('lfCoil');
+  return { xl, cTotal, cExt, deltaUm: delta * 1e6, rAc, qCoil, rDamp, qEff, bw: fHz / qEff, warnings };
+}

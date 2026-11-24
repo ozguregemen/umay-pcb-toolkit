@@ -70,3 +70,5 @@ Bu belge, Umay PCB Toolkit'in hesap mantığının nasıl denetlendiğini, eski 
 - Diferansiyel empedans ve karışma formülleri hızlı tahmin içindir; sıkı kuplajda ve hassas toleranslarda alan çözücü kullanın.
 - İletken kaybı yüzey pürüzlülüğünü içermez.
 - IPC-2221 Tablo 6-1 fonksiyonel yalıtım içindir; şebeke bağlantılı devrelerde IEC 62368-1 / IEC 60664-1 güvenlik mesafeleri geçerlidir.
+- PCB anten hesapları başlangıç ölçüsüdür. Yama anten için Balanis'in iletim hattı modeli kullanılır; kenar giriş direnci (90·εr²/(εr−1)·(L/W)²) ve bant genişliği (Jackson–Alexopoulos) yaklaşık değerlerdir; Balanis Örnek 14.1 (10 GHz, εr 2,2, h 1,588 mm → W 11,86 mm, L 9,06 mm) ile doğrulanmıştır. Basılı monopolde εeff ≈ (εr+1)/2 kabulü yapılır; toprak boyutu, kutu ve yakın bileşenler rezonansı kaydırdığı için son ayar VNA ile yapılmalıdır.
+- Spiral bobin rezonans hesabında AC direnç, deri etkisini içeren Yue–Wong yaklaşımıyla (R_dc·(t/δ)/(1−e^(−t/δ))) bulunur; sarımlar arası yakınlık etkisi dahil değildir, gerçek değer 1,5–3 kat yüksek olabilir. Bobinin öz kapasitesi hesaplanmaz; kullanıcı parazitik kapasite olarak girer.

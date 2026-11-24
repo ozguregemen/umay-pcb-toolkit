@@ -1,6 +1,8 @@
 import { buck, boost } from '../engine/dcdc.js';
 import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
-import { fmt, fixed, si, siHtml } from '../ui/format.js';
+import { fixed, si, siHtml } from '../ui/format.js';
+import { svg, twoTerm, wire, node, ground, terminal, text, rect, path, arrow, dimH, dimV, axes, wave } from '../ui/svg.js';
+import { t } from '../i18n.js';
 
 const strings = {
   tr: {
@@ -30,6 +32,11 @@ const strings = {
     err_boostRange: 'Boost için çıkış gerilimi girişten büyük olmalı.',
     warn_dutyHigh: 'Görev oranı çok yüksek; entegrenin en büyük görev oranını ve en kısa kapalı kalma süresini kontrol edin.',
     warn_dutyLow: 'Görev oranı çok düşük; entegrenin en kısa açık kalma süresini (minimum on-time) kontrol edin.',
+    dc_dgBuck: 'Buck güç katı ve bobin akımı dalga şekli',
+    dc_dgBoost: 'Boost güç katı ve bobin akımı dalga şekli',
+    dc_dgLoad: 'Yük',
+    dc_dgSync: 'veya senk. FET',
+    dc_dgOn: 'Q1 iletimde',
   },
   en: {
     dc_top: 'Topology',
@@ -58,10 +65,87 @@ const strings = {
     err_boostRange: 'For a boost the output voltage must exceed the input.',
     warn_dutyHigh: 'Very high duty cycle; check the IC maximum duty and minimum off-time.',
     warn_dutyLow: 'Very low duty cycle; check the IC minimum on-time.',
+    dc_dgBuck: 'Buck power stage and inductor current waveform',
+    dc_dgBoost: 'Boost power stage and inductor current waveform',
+    dc_dgLoad: 'Load',
+    dc_dgSync: 'or sync FET',
+    dc_dgOn: 'Q1 on',
   },
 };
 
+/**
+ * Live power stage (top) and inductor current (bottom). The current rises
+ * while Q1 conducts (D·T, shaded) and falls while D carries it ((1−D)·T);
+ * its average is the dashed line and its peak-to-peak swing is ΔI.
+ * Duty cycles below 10 % / above 90 % are drawn at the limit so labels fit.
+ */
+function diagram(v, u, r) {
+  const boost = v.top === 'boost';
+  const val = (x, unit) => (Number.isFinite(x) && x > 0 ? si(x, unit, 3) : '?');
+  const yT = 30;
+  const yB = 92;
+  let b = twoTerm('V', 52, yT, 52, yB, { name: 'Vin', value: val(v.vin, 'V'), flip: true });
+  // Inductor with its value on one line above it ("L  10 µH") and the current iL below.
+  const inductor = (x1, x2) => {
+    const cx = (x1 + x2) / 2;
+    return twoTerm('L', x1, yT, x2, yT, { hi: !!r })
+      + text(cx - 3, 18, 'L', { cls: 'name', anchor: 'end' }) + text(cx + 3, 18, val(r?.L, 'H'), { cls: 'val', anchor: 'start' })
+      + arrow(cx - 21, 43, cx + 15, 43, { cls: 'flow', headCls: 'arrow flow' }) + text(cx + 21, 47, 'iL', { cls: 'sym', anchor: 'start' });
+  };
+  if (boost) {
+    b += wire([52, yT], [70, yT]) + inductor(70, 150) + wire([150, yT], [160, yT])
+      + twoTerm('SW', 160, yT, 160, yB) + text(174, 70, 'Q1', { cls: 'name', anchor: 'start' })
+      + twoTerm('D', 160, yT, 226, yT) + text(180, 17, 'D', { cls: 'name', anchor: 'start' })
+      + text(192, 17, t('dc_dgSync'), { anchor: 'start' })
+      + node(160, yT) + node(160, yB) + ground(110, yB) + node(110, yB);
+  } else {
+    b += wire([52, yT], [80, yT]) + twoTerm('SW', 80, yT, 140, yT, { name: 'Q1' })
+      + twoTerm('D', 140, yB, 140, yT) + text(153, 63, 'D', { cls: 'name', anchor: 'start' })
+      + text(153, 77, t('dc_dgSync'), { anchor: 'start' })
+      + inductor(140, 226)
+      + node(140, yT) + node(140, yB) + ground(196, yB) + node(196, yB);
+  }
+  b += wire([226, yT], [400, yT]) + wire([52, yB], [322, yB])
+    + twoTerm('C', 250, yT, 250, yB, { name: 'Cout', value: val(r?.cOutMin, 'F'), hi: !!r })
+    + twoTerm('R', 322, yT, 322, yB, { name: t('dc_dgLoad'), value: val(v.iout, 'A') })
+    + node(250, yT) + node(250, yB) + node(322, yT)
+    + terminal(400, yT, `Vout = ${val(v.vout, 'V')}`, 'top', 'val');
+
+  // Inductor current over two switching periods.
+  const x0 = 56;
+  const y0 = 222;
+  const xs = 62;
+  const T = 140;
+  const d = r ? r.duty : 0.4;
+  const dd = Math.min(0.9, Math.max(0.1, d));
+  const iAvg = r ? r.iL : 1;
+  const dI = r ? r.dI : 0.3;
+  const sc = (y0 - 140) / (iAvg + dI / 2);
+  const Y = (i) => y0 - i * sc;
+  const yPk = Y(iAvg + dI / 2);
+  const yLo = Y(iAvg - dI / 2);
+  for (let k = 0; k < 2; k++) b += rect(xs + k * T, 132, dd * T, y0 - 132, 'zone');
+  b += axes(x0, y0, 290, 92, { xLabel: 't', yLabel: 'iL' })
+    + text(x0 - 4, y0 + 4, '0', { anchor: 'end' })
+    + wave([[x0, Y(iAvg)], [xs + 2 * T, Y(iAvg)]], 'wave2')
+    + text(x0 - 4, Y(iAvg) + 4, val(r?.iL, 'A'), { cls: 'val', anchor: 'end' })
+    + wave([[xs, yLo], [xs + dd * T, yPk], [xs + T, yLo], [xs + T + dd * T, yPk], [xs + 2 * T, yLo]])
+    + dimH(xs, xs + dd * T, 124, 'D·T', { extFrom: 132 })
+    + dimH(xs + dd * T, xs + T, 124, '(1−D)·T', { extFrom: 132 });
+  const fsw = v.f * (u.f === 'MHz' ? 1e6 : 1e3);
+  b += text(xs + T + 30, 128, `D = ${r ? `${fixed(d * 100, 1)} %` : '?'}  ·  T = ${val(1 / fsw, 's')}`, { cls: 'val', anchor: 'start' });
+  // ΔI between the last peak and the end valley.
+  b += path(`M${xs + T + dd * T},${yPk}H356M${xs + 2 * T},${yLo}H356`, 'ext')
+    + dimV(yPk, yLo, 352, '')
+    + text(360, (yPk + yLo) / 2 - 1, 'ΔI', { cls: 'sym', anchor: 'start' })
+    + text(360, (yPk + yLo) / 2 + 12, val(r?.dI, 'A'), { cls: 'val', anchor: 'start' });
+  // Legend for the shaded on-time.
+  b += rect(356, 204, 10, 10, 'zone') + rect(356, 204, 10, 10, 'ext') + text(371, 213, t('dc_dgOn'), { anchor: 'start' });
+  return svg(440, 240, b, t(boost ? 'dc_dgBoost' : 'dc_dgBuck'), { wide: true });
+}
+
 export default {
+  diagram,
   id: 'dcdc',
   strings,
   sections: [

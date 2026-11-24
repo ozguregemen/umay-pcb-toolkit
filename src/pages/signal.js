@@ -4,6 +4,7 @@ import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js
 import { fmt, si, siHtml } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
+import { svg, rect, path, text, axes, wave, dimH } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -37,6 +38,12 @@ const strings = {
     sg_skew: 'Skew (ΔL · t_pd)',
     sg_allowed: 'İzin verilen uzunluk farkı',
     sg_note: 'Tek kutuplu yaklaşım: BW = 0,35 / tr(10–90), diz frekansı 0,5 / tr (H. Johnson). Uzunluk l_r/6’dan kısaysa iz toplu eleman sayılabilir; gidiş-dönüş gecikmesi tr’den uzunsa (l > l_r/2) yansımalar kenarı bozar.',
+    sg_dgAria: 'Dijital kenar ve yükselme süresi; kenarın iz üzerindeki uzunluğu ile iz uzunluğunun karşılaştırması',
+    sg_dgLumped: 'toplu',
+    sg_dgTrans: 'geçiş',
+    sg_dgTline: 'iletim hattı',
+    sg_dgTrace: 'iz',
+    sg_dgNoLen: 'Karşılaştırmak için iz uzunluğu girin',
   },
   en: {
     sg_tr: 'Rise time (tr)',
@@ -69,8 +76,94 @@ const strings = {
     sg_skew: 'Skew (ΔL · t_pd)',
     sg_allowed: 'Allowed length mismatch',
     sg_note: 'Single-pole approximation: BW = 0.35 / tr(10–90), knee frequency 0.5 / tr (H. Johnson). A trace shorter than l_r/6 can be treated as lumped; when the round trip exceeds tr (l > l_r/2), reflections distort the edge.',
+    sg_dgAria: 'Digital edge with its rise time; the edge length on the trace compared with the trace length',
+    sg_dgLumped: 'lumped',
+    sg_dgTrans: 'transition',
+    sg_dgTline: 'transmission line',
+    sg_dgTrace: 'trace',
+    sg_dgNoLen: 'Enter a trace length to compare',
   },
 };
+
+/** Short length label for the diagram. */
+const lenShort = (m) => (Number.isFinite(m)
+  ? (isImperial() ? `${fmt(m / 0.0254, 3)} in` : `${fmt(m * 1000, 3)} mm`)
+  : '?');
+/** Thin accent outline for the transition zone (the 'zone' fill has no stroke). */
+const OUTLINE = ' style="stroke-width:1"';
+
+/**
+ * Live picture. Top: a rising edge with tr between the 10/90 % (or 20/80 %)
+ * levels, and the knee frequency / bandwidth it implies. Bottom: a length
+ * ruler where the edge occupies l_r = tr·v of trace; up to l_r/6 the trace is
+ * lumped, beyond l_r/2 it is a transmission line. The user's trace is drawn
+ * on the same scale (cut with a break mark when longer than the ruler).
+ */
+function diagram(v, u, r) {
+  let b = '';
+  // --- Edge -----------------------------------------------------------------
+  const x0 = 40;
+  const y0 = 104;
+  const yLo = 96;
+  const amp = 62;
+  const xc = 150;
+  const s = 15.9; // logistic edge: 10–90 % spans 70 px
+  const Y = (x) => yLo - amp / (1 + Math.exp(-(x - xc) / s));
+  const pts = [];
+  for (let x = 44; x <= 266; x += 2) pts.push([x, Y(x)]);
+  const p = v.edge === '20-80' ? 0.2 : 0.1;
+  const xa = xc + s * Math.log(p / (1 - p));
+  const xb = 2 * xc - xa;
+  const ya = yLo - amp * p;
+  const yb = yLo - amp * (1 - p);
+  const trS = v.tr * (u.tr === 'ps' ? 1e-12 : 1e-9);
+  const pct = (x) => `${Math.round(x * 100)} %`;
+  b += axes(x0, y0, 232, 96) + text(x0 + 236, y0 + 4, 't', { anchor: 'start' })
+    + path(`M${x0},${ya}H${xa}M${x0},${yb}H${xb}M${xa},${ya}V18M${xb},${yb}V18`, 'ext')
+    + text(x0 - 4, ya + 4, pct(p), { anchor: 'end' }) + text(x0 - 4, yb + 4, pct(1 - p), { anchor: 'end' })
+    + wave(pts)
+    + dimH(xa, xb, 18, `tr = ${Number.isFinite(trS) && trS > 0 ? si(trS, 's', 3) : '?'}`, { cls: 'val' });
+  b += text(298, 38, t('sg_knee'), { anchor: 'start' })
+    + text(298, 54, r ? si(r.kneeHz, 'Hz', 3) : '?', { cls: 'val', anchor: 'start' })
+    + text(298, 78, t('sg_bw'), { anchor: 'start' })
+    + text(298, 94, r ? si(r.bwHz, 'Hz', 3) : '?', { cls: 'val', anchor: 'start' });
+  // --- Length ruler -----------------------------------------------------------
+  const X0 = 40;
+  const W = 360;
+  const lr = r ? r.riseLenM : NaN;
+  const L = Number.isFinite(v.L) && v.L > 0 ? toMm(v.L, u.L) / 1000 : 0;
+  const span = Number.isFinite(lr) ? lr * Math.min(1.8, Math.max(1.08, (1.06 * L) / lr)) : 1;
+  const X = (m) => X0 + (W * Math.min(m, span)) / span;
+  const lrPx = Number.isFinite(lr) ? lr : span / 1.08;
+  const t6 = X(lrPx / 6);
+  const t2 = X(lrPx / 2);
+  const t1 = X(lrPx);
+  b += rect(X0, 138, t6 - X0, 12, 'zone-ok') + rect(t6, 138, t2 - t6, 12, 'zone') + rect(t6, 138, t2 - t6, 12, 'wire hi', OUTLINE) + rect(t2, 138, X0 + W - t2, 12, 'zone-bad')
+    + path(`M${t6},134V152M${t2},134V152M${t1},134V152`, 'axis');
+  [[t6, 'l_r/6', lr / 6], [t2, 'l_r/2', lr / 2], [t1, 'l_r = tr·v', lr]].forEach(([x, name, m]) => {
+    b += text(x, 117, name, { cls: 'sym' }) + text(x, 130, lenShort(m), { cls: 'val' });
+  });
+  b += text((X0 + t6) / 2, 163, t('sg_dgLumped'), { cls: 'okt' })
+    + text((t6 + t2) / 2, 163, t('sg_dgTrans'), { cls: 'val', size: 11 })
+    + text((t2 + X0 + W) / 2, 163, t('sg_dgTline'), { cls: 'badt' });
+  // The user's trace, driven from the left.
+  b += path(`M22,170L36,178L22,186Z`, 'comp');
+  if (L > 0 && r) {
+    const reg = r.regime;
+    const cls = { lumped: ['zone-ok', 'okt'], transition: ['zone', 'val'], tline: ['zone-bad', 'badt'] }[reg] ?? ['zone', 'val'];
+    const xe = X(L);
+    b += path('M36,178H40', 'wire') + rect(X0, 172, Math.max(2, xe - X0), 12, cls[0])
+      + (cls[0] === 'zone' ? rect(X0, 172, Math.max(2, xe - X0), 12, 'wire hi', OUTLINE) : '');
+    if (L > span) b += path(`M${xe - 16},188L${xe - 10},168M${xe - 10},188L${xe - 4},168`, 'wire');
+    const label = `${t('sg_dgTrace')} ${lenShort(L)}`;
+    b += xe < 300
+      ? text(xe + 6, 182, label, { cls: cls[1], anchor: 'start', size: 11 })
+      : text(xe - (L > span ? 22 : 6), 182, label, { cls: cls[1], anchor: 'end', size: 11 });
+  } else {
+    b += text(X0 + 4, 182, t('sg_dgNoLen'), { anchor: 'start' });
+  }
+  return svg(440, 196, b, t('sg_dgAria'), { wide: true });
+}
 
 const lenStr = (m) => {
   const mm = m * 1000;
@@ -78,6 +171,7 @@ const lenStr = (m) => {
 };
 
 export default {
+  diagram,
   id: 'signal',
   strings,
   sections: [

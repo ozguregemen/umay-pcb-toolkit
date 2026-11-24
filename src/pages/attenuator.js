@@ -3,6 +3,7 @@ import { nearestStandard } from '../engine/eseries.js';
 import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
+import { svg, twoTerm, wire, node, ground, terminal, text, circle, path, arrow } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -33,6 +34,9 @@ const strings = {
     at_pmax: 'En çok ısınan direnç',
     at_note: 'Kaynak ve yük aynı Z₀ empedansındadır. Standart değerler seçildiğinde gerçek zayıflatma ve eşleşme devre analiziyle yeniden hesaplanır. Yüksek frekansta direnç gövdesinin parazitikleri (özellikle 0603 ve üstü) sonucu bozar; GHz bölgesinde ince film ve küçük kılıf kullanın.',
     warn_powerHigh: 'Bir dirençteki güç kaybı 1/10 W’ı aşıyor; direnç gücünü kontrol edin.',
+    at_dgAria: '{top} zayıflatıcı, Z₀ kaynak ile Z₀ yük arasında',
+    at_dgSource: 'kaynak',
+    at_dgLoad: 'yük',
   },
   en: {
     at_topology: 'Topology',
@@ -62,8 +66,74 @@ const strings = {
     at_pmax: 'Hottest resistor',
     at_note: 'Source and load are both Z₀. When standard values are chosen, the actual attenuation and match are recomputed by circuit analysis. At high frequency the resistor body parasitics (especially 0603 and larger) degrade the result; use thin-film parts in small packages in the GHz range.',
     warn_powerHigh: 'A resistor dissipates more than 1/10 W; check its power rating.',
+    at_dgAria: '{top} attenuator between a Z₀ source and a Z₀ load',
+    at_dgSource: 'source',
+    at_dgLoad: 'load',
   },
 };
+
+/** AC (signal) source between (x, y1) and (x, y2): circle with a sine. */
+function acSource(x, y1, y2) {
+  const cy = (y1 + y2) / 2;
+  return wire([x, y1], [x, cy - 13]) + wire([x, cy + 13], [x, y2]) + circle(x, cy, 13, 'comp')
+    + path(`M${x - 7},${cy}c2.3,-6.5 4.7,-6.5 7,0s4.7,6.5 7,0`, 'wire');
+}
+
+/**
+ * Live schematic: the chosen network between a Z₀ source and a Z₀ load, each
+ * resistor with the value in use (standard or exact), plus Zin and the
+ * actual attenuation.
+ */
+function diagram(v, u, r) {
+  const res = (k) => {
+    const x = r ? r.std[k] : NaN;
+    return Number.isFinite(x) && x > 0 ? si(x, 'Ω', 3) : '?';
+  };
+  const z0 = Number.isFinite(v.z0) && v.z0 > 0 ? si(v.z0, 'Ω', 3) : '?';
+  const bt = v.top === 'bt';
+  const yR = bt ? 72 : 52; // signal rail
+  const yG = 150; // ground rail
+  const pIn = 125;
+  const pOut = 335;
+  const xL = 385;
+  let b = acSource(34, yR, yG)
+    + twoTerm('R', 34, yR, pIn, yR, { name: 'Z₀', value: z0 })
+    + wire([pOut, yR], [xL, yR])
+    + twoTerm('R', xL, yR, xL, yG, { name: 'Z₀', value: z0 })
+    + wire([34, yG], [xL, yG]) + ground(80, yG) + node(80, yG)
+    + text(34, 175, t('at_dgSource')) + text(xL, 175, t('at_dgLoad'));
+  if (v.top === 'pi') {
+    b += wire([pIn, yR], [150, yR]) + wire([310, yR], [pOut, yR])
+      + twoTerm('R', 150, yR, 150, yG, { name: 'R1', value: res('r1') })
+      + twoTerm('R', 150, yR, 310, yR, { name: 'R2', value: res('r2') })
+      + twoTerm('R', 310, yR, 310, yG, { name: 'R1', value: res('r1'), flip: true })
+      + node(150, yR) + node(310, yR) + node(150, yG) + node(310, yG);
+  } else if (v.top === 't') {
+    b += twoTerm('R', pIn, yR, 230, yR, { name: 'R1', value: res('r1') })
+      + twoTerm('R', 230, yR, pOut, yR, { name: 'R1', value: res('r1') })
+      + twoTerm('R', 230, yR, 230, yG, { name: 'R2', value: res('r2') })
+      + node(230, yR) + node(230, yG);
+  } else {
+    b += wire([pIn, yR], [pIn, 34]) + wire([pOut, 34], [pOut, yR])
+      + twoTerm('R', pIn, 34, pOut, 34, { name: 'R1', value: res('r1') })
+      + twoTerm('R', pIn, yR, 230, yR, { name: 'R3', value: res('r3') })
+      + twoTerm('R', 230, yR, pOut, yR, { name: 'R3', value: res('r3') })
+      + twoTerm('R', 230, yR, 230, yG, { name: 'R2', value: res('r2') })
+      + node(230, yR) + node(230, yG);
+  }
+  // Ports (drawn last so the open circles sit on top of the wires).
+  b += terminal(pIn, yR, '') + terminal(pOut, yR, '');
+  // Zin looking into the input port.
+  b += text(pIn, 16, `Zin = ${r ? `${fmt(r.zin, 4)} Ω` : '?'}`, { cls: 'val' })
+    + arrow(pIn, 25, pIn + 30, 25, { cls: 'flow', headCls: 'arrow flow' })
+    + path(`M${pIn},27V${(bt ? 34 : yR) - 4}`, 'ext');
+  // Attenuation from input port to output port.
+  b += path(`M${pIn},${yG + 8}V186M${pOut},${yG + 8}V186`, 'ext')
+    + arrow(pIn, 181, pOut, 181, { cls: 'flow', headCls: 'arrow flow' })
+    + text(230, 176, `${t('at_db')} = ${r ? `${fixed(r.insertionLossDb, 2)} dB` : '?'}`, { cls: 'val' });
+  const top = { pi: 'at_pi', t: 'at_t', bt: 'at_bt' }[v.top] ?? 'at_pi';
+  return svg(440, 196, b, t('at_dgAria', { top: t(top) }), { wide: true });
+}
 
 const LABELS = {
   pi: { r1: 'at_r1pi', r2: 'at_r2pi' },
@@ -72,6 +142,7 @@ const LABELS = {
 };
 
 export default {
+  diagram,
   id: 'attenuator',
   strings,
   sections: [

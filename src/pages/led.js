@@ -2,6 +2,7 @@ import { ledResistor } from '../engine/circuit.js';
 import { TOLERANCE } from '../engine/eseries.js';
 import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
+import { svg, twoTerm, wire, node, ground, arrow, dimH, text } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
 
 const strings = {
@@ -40,6 +41,8 @@ const strings = {
     warn_led_power: 'Direnç kaybı 1 W’ı aşıyor (2× payla 2 W’tan büyük güç sınıfı gerekir). Güç direnci kullanın, kaybı birkaç dirence bölün ya da anahtarlamalı LED sürücüsü düşünün.',
     warn_led_lowEff: 'Gücün yarısından fazlası dirençte ısıya dönüşüyor. Aynı beslemeye daha fazla LED’i seri bağlamak ya da anahtarlamalı sürücü kullanmak verimi artırır.',
     err_led_headroom: 'Besleme gerilimi LED’lerin toplam ileri geriliminden (N·Vf = {v}) büyük olmalı.',
+    led_dg: 'LED devresi: Vs beslemesi, seri direnç ve seri bağlı LED’ler; gerilim düşümleri ve akım',
+    led_dgNoHeadroom: 'Vs ≤ N·Vf: direnç için gerilim kalmıyor',
   },
   en: {
     led_vs: 'Supply voltage Vs',
@@ -76,6 +79,8 @@ const strings = {
     warn_led_power: 'Resistor dissipation exceeds 1 W (a rating above 2 W is needed with 2× margin). Use a power resistor, split the loss across several resistors or consider a switching LED driver.',
     warn_led_lowEff: 'More than half of the power is turned into heat in the resistor. More LEDs in series on the same supply, or a switching driver, improves efficiency.',
     err_led_headroom: 'The supply voltage must exceed the total LED forward voltage (N·Vf = {v}).',
+    led_dg: 'LED circuit: supply Vs, series resistor and LEDs in series with their voltage drops and the current',
+    led_dgNoHeadroom: 'Vs ≤ N·Vf: no voltage is left for the resistor',
   },
 };
 
@@ -91,7 +96,59 @@ const ratingLabel = (w) => {
   return w < 1 ? `1/${Math.round(1 / w)} W` : `${fmt(w)} W`;
 };
 
+const val = (x, unit) => (Number.isFinite(x) && x > 0 ? si(x, unit, 3) : '?');
+
+/**
+ * Live schematic: Vs → R → N LEDs → GND. Dimension brackets show how the supply
+ * splits into VR and N·Vf; the resistor shows the recommended standard value.
+ * More than three LEDs are drawn as LED, LED, …, LED.
+ */
+function diagram(v, u, r) {
+  const n = Number.isInteger(v.n) && v.n >= 1 ? v.n : 1;
+  const vLeds = n * v.vf;
+  const xs = 56; // source
+  const xc = 398; // right-hand return wire
+  const yt = 58;
+  const yb = 168;
+  const ra = 84; // resistor span
+  const rb = 152;
+  // LED string: up to three LEDs, otherwise LED, LED, ⋯, LED.
+  const items = n <= 3 ? Array(n).fill('led') : ['led', 'led', 'dots', 'led'];
+  const step = 46;
+  const s0 = 274 - (items.length * step) / 2;
+  const s1 = s0 + items.length * step;
+  let body = twoTerm('V', xs, yt, xs, yb, { name: 'Vs', value: val(v.vs, 'V'), flip: true })
+    + wire([xs, yt], [ra, yt])
+    + twoTerm('R', ra, yt, rb, yt, { hi: true })
+    + text((ra + rb) / 2, yt - 40, `R (${v.ser})`, { cls: 'name' })
+    + text((ra + rb) / 2, yt - 26, val(r?.rRec, 'Ω'), { cls: 'val' })
+    + wire([rb, yt], [s0, yt]);
+  items.forEach((kind, i) => {
+    const a = s0 + i * step;
+    const c = a + step / 2;
+    body += kind === 'led'
+      ? twoTerm('LED', a, yt, a + step, yt)
+      : wire([a, yt], [c - 12, yt]) + wire([c + 12, yt], [a + step, yt]) + text(c, yt + 4, '⋯', { cls: 'name' });
+  });
+  // Above the string: count and the per-LED Vf (the bracket below shows N·Vf).
+  body += (n > 1
+    ? text((s0 + s1) / 2, yt - 40, `${n} × LED`, { cls: 'name' }) + text((s0 + s1) / 2, yt - 26, `Vf = ${val(v.vf, 'V')}`, { cls: 'val' })
+    : text((s0 + s1) / 2, yt - 26, 'LED', { cls: 'name' }))
+    + wire([s1, yt], [xc, yt], [xc, yb], [xs, yb])
+    + node(226, yb) + ground(226, yb)
+    // Voltage drops
+    + dimH(ra, rb, yt + 30, `VR = ${val(r?.drop, 'V')}`, { below: true, extFrom: yt + 9, cls: 'val' })
+    + dimH(s0 + 6, s1 - 6, yt + 30, `${n > 1 ? 'N·Vf' : 'Vf'} = ${val(vLeds, 'V')}`, { below: true, extFrom: yt + 9, cls: 'val' })
+    // Current
+    + arrow(xc - 16, yt + 50, xc - 16, yt + 92, { cls: 'flow', headCls: 'arrow flow' })
+    + text(xc - 24, yt + 76, `I = ${val(r?.iRec, 'A')}`, { cls: 'val', anchor: 'end' });
+  if (r) body += text(220, yb + 38, `Vs = VR + N·Vf:  ${val(v.vs, 'V')} = ${val(r.drop, 'V')} + ${val(vLeds, 'V')}`, { cls: 'title' });
+  else if (v.vs > 0 && vLeds >= v.vs) body += text(220, yb + 38, t('led_dgNoHeadroom'), { cls: 'badt' });
+  return svg(440, yb + 46, body, t('led_dg'), { wide: true });
+}
+
 export default {
+  diagram,
   id: 'led',
   strings,
   sections: [

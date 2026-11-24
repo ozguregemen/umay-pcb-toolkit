@@ -25,6 +25,7 @@ const P = {
   crystal: '<rect x="8" y="5" width="8" height="14" rx="1.5"/><path d="M5 8v8M19 8v8M2 12h3M19 12h3"/>',
   attenuator: '<path d="M2 8h4l2-3 2 6 2-6 2 6 2-3h4"/><path d="M7 14v6M17 14v6M5 20h4M15 20h4"/>',
   spiral: '<path d="M12 12h2v-3H9v6h8V6H6v12h14"/>',
+  antenna: '<path d="M12 10v11M8 21h8"/><circle cx="12" cy="8" r="2"/><path d="M7.8 3.8a6 6 0 0 0 0 8.4M16.2 3.8a6 6 0 0 1 0 8.4"/>',
   fanout: '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M12 3v18"/>',
   reflect: '<path d="M3 9h13l-3-3M21 15H8l3 3"/><path d="M19 5v14" opacity=".5"/>',
   dcdc: '<path d="M3 17h4l3-10h2l3 10h6"/><path d="M3 21h18" opacity=".4"/>',

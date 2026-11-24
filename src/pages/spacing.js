@@ -4,6 +4,7 @@ import { hero, block, formulaBlock, messages, rows } from '../ui/calculator.js';
 import { fixed, fmt, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
+import { svg, rect, path, text, dimH } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -29,6 +30,12 @@ const strings = {
     sp_perVolt: '> 500 V (mm/V)',
     sp_usedRow: 'Kullanılan satır',
     sp_rowOver500: '> 500 V doğrusal kural',
+    sp_dgLead: 'bileşen bacağı',
+    sp_dgPolymer: 'kalıcı polimer kaplama',
+    sp_dgConformal: 'konformal kaplama',
+    sp_dgInternal: 'iç katman (laminat içinde)',
+    sp_dgAltitude: '3050 m üzeri: seyrek hava',
+    sp_dgBetween: 'iletkenler arasında',
     sp_note: '500 V üzerinde aralık = 301–500 V satırındaki değer + kategori katsayısı (mm/V) × (V − 500); ör. B1, 600 V: 0,25 + 100 × 0,0025 = 0,50 mm. Standart, tablo sınırları arasında kalan gerilimler (ör. 15,5 V) için kural vermez; güvenli tarafta kalmak için bir üst satır kullanılır. Değerler IPC-2221B’ye göredir; IPC-2221C (2023) tabloyu değiştirmiştir.',
     warn_spacingCoating: 'A5/A7 kaplamalı kategoriler, kaplamanın iletkenlerin tamamını örttüğünü ve kusursuz uygulandığını varsayar.',
     warn_spacingMains: 'IPC-2221 Tablo 6-1 fonksiyonel yalıtım içindir. Şebeke bağlantılı ve dokunulabilir devrelerde güvenlik için IEC 62368-1 / IEC 60664-1 creepage ve clearance değerleri esas alınmalıdır; bunlar genellikle çok daha büyüktür.',
@@ -57,6 +64,12 @@ const strings = {
     sp_perVolt: '> 500 V (mm/V)',
     sp_usedRow: 'Row used',
     sp_rowOver500: '> 500 V linear rule',
+    sp_dgLead: 'component lead',
+    sp_dgPolymer: 'permanent polymer coating',
+    sp_dgConformal: 'conformal coating',
+    sp_dgInternal: 'internal layer (inside laminate)',
+    sp_dgAltitude: 'above 3050 m: thin air',
+    sp_dgBetween: 'between conductors',
     sp_note: 'Above 500 V, spacing = the 301–500 V value + category coefficient (mm/V) × (V − 500); e.g. B1 at 600 V: 0.25 + 100 × 0.0025 = 0.50 mm. The standard gives no rule for voltages between the printed band limits (e.g. 15.5 V); the next band up is used to stay conservative. Values follow IPC-2221B; IPC-2221C (2023) revised the table.',
     warn_spacingCoating: 'Coated categories A5/A7 assume the coating covers all conductors and is applied without defects.',
     warn_spacingMains: 'IPC-2221 Table 6-1 covers functional insulation. For mains-connected or user-accessible circuits, safety creepage and clearance per IEC 62368-1 / IEC 60664-1 apply and are usually much larger.',
@@ -85,7 +98,58 @@ const mmMil = (mm) => (isImperial()
   : `${fixed(mm, 2)} <span class="u">mm</span>`);
 const mmMilSub = (mm) => (isImperial() ? `${fixed(mm, 3)} mm` : `${fixed(fromMm(mm, 'mil'), 1)} mil`);
 
+/**
+ * Live cross-section: what the category means physically, and the spacing
+ * between two conductors at the voltage. The gap grows on a log scale so a
+ * larger voltage visibly needs more room (not to scale).
+ */
+function diagram(v, u, r) {
+  const cat = v.cat;
+  const mm = r ? (r.mode === 'voltage' ? r.dMm : r.mm) : NaN;
+  const volts = r ? (r.mode === 'voltage' ? r.vmax : Math.abs(v.V)) : NaN;
+  const gap = Number.isFinite(mm) && mm > 0 ? Math.max(36, Math.min(220, 70 + 55 * Math.log10(mm / 0.1))) : 90;
+  const cx = 220;
+  const x1 = cx - gap / 2;
+  const x2 = cx + gap / 2;
+  const internal = cat === 'B1';
+  const lead = cat === 'A6' || cat === 'A7';
+  const coated = cat === 'B4' || cat === 'A5' || cat === 'A7';
+  const surf = internal ? 110 : 112; // conductor bottom y
+  const cH = 12;
+  let body = '';
+  // 1) Board
+  body += internal
+    ? rect(30, 70, 380, 90, 'diel') + rect(30, 66, 380, 4, 'cu') + rect(30, 160, 380, 4, 'cu')
+    : rect(30, 112, 380, 56, 'diel') + text(40, 160, 'FR-4', { cls: 'lbl', anchor: 'start' });
+  // 2) Component bodies and leads (A6/A7)
+  if (lead) {
+    body += rect(x1 - 92, surf - 58, 56, 26, 'soft', ' rx="3"') + rect(x2 + 36, surf - 58, 56, 26, 'soft', ' rx="3"')
+      + path(`M${x1 - 36},${surf - 45}H${x1 - 22}V${surf - cH}H${x1 - 4}`, 'wire') + path(`M${x2 + 36},${surf - 45}H${x2 + 22}V${surf - cH}H${x2 + 4}`, 'wire')
+      + text(x1 - 64, surf - 41, 'IC', { cls: 'lbl' }) + text(x2 + 64, surf - 41, 'IC', { cls: 'lbl' });
+  }
+  // 3) Coating over the conductors
+  if (coated) {
+    const top = lead ? surf - 66 : surf - cH - 9;
+    body += path(`M30,${surf}V${top + 8}Q30,${top} 38,${top}H402Q410,${top} 410,${top + 8}V${surf}Z`, 'zone');
+  }
+  // 4) Conductors (traces or pads)
+  body += rect(x1 - 70, surf - cH, 70, cH, 'cu') + rect(x2, surf - cH, 70, cH, 'cu');
+  // 5) Labels
+  if (coated) body += text(404, (lead ? surf - 72 : surf - cH - 14), t(cat === 'B4' ? 'sp_dgPolymer' : 'sp_dgConformal'), { cls: 'lbl', anchor: 'end' });
+  if (lead) body += text(36, surf - 72, t('sp_dgLead'), { cls: 'lbl', anchor: 'start' });
+  if (internal) body += text(404, 84, t('sp_dgInternal'), { cls: 'lbl', anchor: 'end' });
+  if (cat === 'B3') body += text(404, 28, t('sp_dgAltitude'), { cls: 'lbl', anchor: 'end' });
+  const signY = internal ? surf + 16 : surf + 18;
+  body += text(x1 - 35, signY, '+', { cls: 'val', size: 15 }) + text(x2 + 35, signY, '−', { cls: 'val', size: 15 });
+  // 6) The spacing
+  const dimY = lead ? surf - 26 : surf - cH - (coated ? 22 : 16);
+  body += dimH(x1, x2, dimY, Number.isFinite(mm) ? `d ≥ ${isImperial() ? `${fixed(fromMm(mm, 'mil'), 1)} mil` : `${fixed(mm, 2)} mm`}` : 'd', { cls: 'val', extFrom: surf - cH });
+  if (Number.isFinite(volts)) body += text(cx, 196, `${fmt(volts, 4)} V ${t('sp_dgBetween')}`, { cls: 'title' });
+  return svg(440, 205, body, t(`cat_${cat}`), { wide: true });
+}
+
 export default {
+  diagram,
   id: 'spacing',
   strings,
   sections: [

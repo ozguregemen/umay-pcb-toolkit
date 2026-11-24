@@ -4,6 +4,7 @@ import { heroes, rows, block, formulaBlock, messages, invalid, checks } from '..
 import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
+import { svg, rect, circle, path, text, dimH, arrow } from '../ui/svg.js';
 
 const strings = {
   tr: {
@@ -53,6 +54,18 @@ const strings = {
     warn_aspectHigh: 'En-boy oranı 10:1’in üzerinde; kaplama güvenilirliği için üreticinize danışın.',
     warn_holeLoose: 'En büyük delik IPC-2222 sınırını aşıyor (en küçük bacak + 0,7 mm; Seviye C’de 0,6 mm); lehim dolumu zayıflayabilir.',
     warn_padSmallerThanHole: 'Pad, en büyük delikten küçük veya eşit.',
+    ps_dgAria: 'Padin ölçekli üstten görünüşü: pad çapı, bitmiş delik toleransı, matkap deliği, delikteki bacak ve c/2 kadar kaymış en büyük delikle kalan en kötü durum halkası; altta D = a + 2b + c zinciri',
+    ps_dgScale: 'ölçekli · üstten görünüş · dış katman',
+    ps_dgPad: 'pad',
+    ps_dgMinPad: 'min. pad',
+    ps_dgMaxHole: 'en büyük delik',
+    ps_dgMinRing: 'min. halka',
+    ps_dgAllow: 'üretim payı',
+    ps_dgTol: 'delik toleransı',
+    ps_dgDrill: 'matkap',
+    ps_dgWorst: 'en kötü halka',
+    ps_dgLead: 'bacak',
+    ps_dgClear: 'çap boşluğu',
   },
   en: {
     ps_kind: 'Hole type',
@@ -101,6 +114,18 @@ const strings = {
     warn_aspectHigh: 'Aspect ratio above 10:1; consult your fabricator about plating reliability.',
     warn_holeLoose: 'The largest hole exceeds the IPC-2222 limit (minimum lead + 0.7 mm; 0.6 mm at Level C); solder fill may suffer.',
     warn_padSmallerThanHole: 'Pad is smaller than or equal to the largest hole.',
+    ps_dgAria: 'Pad top view to scale: pad diameter, finished-hole tolerance, drilled hole, the lead in the hole and the worst-case ring left when the largest hole shifts by c/2; below, the chain D = a + 2b + c',
+    ps_dgScale: 'to scale · top view · external layer',
+    ps_dgPad: 'pad',
+    ps_dgMinPad: 'min. pad',
+    ps_dgMaxHole: 'largest hole',
+    ps_dgMinRing: 'min. ring',
+    ps_dgAllow: 'fab. allowance',
+    ps_dgTol: 'hole tolerance',
+    ps_dgDrill: 'drill',
+    ps_dgWorst: 'worst ring',
+    ps_dgLead: 'lead',
+    ps_dgClear: 'clearance (dia.)',
   },
 };
 
@@ -110,16 +135,108 @@ const Lh = (mm) => (isImperial()
   ? `${fixed(fromMm(mm, 'mil'), 1)} <span class="u">mil</span>`
   : `${fixed(mm, 3)} <span class="u">mm</span>`);
 
-function diagram() {
-  return `
-  <svg class="diagram" viewBox="0 0 380 120" role="img" aria-label="pad">
-    <circle class="cu" cx="190" cy="60" r="48"/>
-    <circle class="hole" cx="190" cy="60" r="26"/>
-    <path class="dim" d="M142 60h96"/><text x="200" y="54" class="lbl" text-anchor="start">pad</text>
-    <path class="line" d="M216 60h22"/><text x="227" y="74" style="font-size:11px">b</text>
-    <path class="dim" d="M164 60h52"/><text x="180" y="74" style="font-size:11px">a</text>
-    <text class="lbl" x="300" y="40" text-anchor="start">a + 2b + c</text>
-  </svg>`;
+const r2 = (x) => Math.round(x * 100) / 100;
+/** Closed circle sub-path (for even-odd rings). */
+const ringPath = (cx, cy, r) => `M${r2(cx - r)},${r2(cy)}a${r2(r)},${r2(r)} 0 1,0 ${r2(2 * r)},0a${r2(r)},${r2(r)} 0 1,0 ${r2(-2 * r)},0Z`;
+
+/**
+ * Live top view, to scale: pad, finished-hole tolerance band, drilled hole,
+ * the lead in the hole, and the worst case — the largest hole shifted by c/2
+ * — which leaves the worst-case annular ring (green/red against IPC-2221).
+ * The chain below explains the land formula D = a + 2b + c.
+ */
+function diagram(v, u, r) {
+  const cx = 118; const cy = 114; const R = 70;
+  const ok = !!r;
+  const b = MIN_RING_MM.external;
+  const padGiven = !!r?.check;
+  const isLead = v.k !== 'via';
+  let a; let minH; let nomH; let drill; let c; let landExt; let leadD = null;
+  if (ok) {
+    ({ maxHole: a, minHole: minH, nominalHole: nomH, drill, fabAllowance: c, landExt } = r);
+    leadD = r.leadDia;
+  } else {
+    nomH = 0.5; minH = 0.4; a = 0.6; drill = 0.65; c = 0.25; landExt = a + 2 * b + c;
+    if (isLead) leadD = 0.28;
+  }
+  const D = padGiven ? r.check.padMm : landExt;
+  const ring = (D - a - c) / 2;
+  const pass = padGiven ? r.check.ipc2221Ext : null;
+  const s = R / Math.max(D / 2, c / 2 + a / 2, drill / 2);
+  const Rp = (D / 2) * s;
+  const gx = cx + (c / 2) * s;
+  const ra = Math.max((a / 2) * s, 3);
+  const tone = pass === null ? 'hi' : pass ? 'good' : 'bad';
+
+  // Pad, finished hole, tolerance band (min…max), drilled hole.
+  let g = circle(cx, cy, Rp, 'cu') + circle(cx, cy, Math.max((nomH / 2) * s, 2), 'hole');
+  const rMin = Math.max((minH / 2) * s, 1);
+  const rMax = Math.max((a / 2) * s, rMin + 1.5);
+  g += `<path class="zone" fill-rule="evenodd" d="${ringPath(cx, cy, rMax)}${ringPath(cx, cy, rMin)}"/>`
+    + circle(cx, cy, rMin, 'dimline') + circle(cx, cy, rMax, 'dimline')
+    + circle(cx, cy, Math.max((drill / 2) * s, rMax + 1), 'dim');
+  // Component lead inside the hole.
+  if (isLead && leadD > 0) {
+    if (v.k === 'rect' && ok) {
+      const w = toMm(v.lw, u.lw) * s; const h = toMm(v.lt, u.lt) * s;
+      g += rect(cx - w / 2, cy - h / 2, w, h, 'soft') + rect(cx - w / 2, cy - h / 2, w, h, 'wire');
+    } else g += circle(cx, cy, (leadD / 2) * s, 'soft') + circle(cx, cy, (leadD / 2) * s, 'wire');
+  }
+  // Worst case: largest hole, moved by c/2 → the thinnest ring.
+  g += circle(gx, cy, ra, `wave2 ${tone === 'hi' ? '' : tone}`)
+    + path(`M${r2(cx - 4)},${cy}h8M${cx},${cy - 4}v8M${r2(gx - 3)},${cy - 3}l6,6M${r2(gx - 3)},${cy + 3}l6,-6`, 'dimline');
+  if (gx - cx >= 12) g += arrow(cx, cy, gx, cy, { cls: 'dimline' }) + text((cx + gx) / 2, cy - 9, 'c/2', { cls: 'sym' });
+  g += `<path class="wire ${tone}" style="stroke-width:3" d="M${r2(gx + ra)},${cy}H${r2(cx + Rp)}"/>`;
+
+  // Pad diameter above; chain below: [ring + c][a][ring] = D.
+  const Dlbl = ok ? `${padGiven ? 'D' : 'D_min'} = ${L(D)}` : 'D';
+  g += dimH(cx - Rp, cx + Rp, cy - Math.max(Rp, ra) - 10, Dlbl, { cls: ok ? 'val' : 'sym', extFrom: cy });
+  const yC = cy + Math.max(Rp, ra, (drill / 2) * s) + 12;
+  const xs = [cx - Rp, gx - ra, gx + ra, cx + Rp];
+  g += path(xs.map((x) => `M${r2(x)},${cy}V${yC + 4}`).join(''), 'ext')
+    + path(`M${r2(Math.min(...xs) - 4)},${yC}H${r2(Math.max(...xs) + 4)}`, 'dimline')
+    + path(xs.map((x) => `M${r2(x - 3)},${yC + 3}l6,-6`).join(''), 'wire');
+  // Segment labels: centred when they fit, else outside; never on top of each other.
+  const rs = padGiven ? 'r' : 'b';
+  let free = -Infinity;
+  [[xs[0], xs[1], `${rs} + c`, 'sym'], [xs[1], xs[2], 'a', 'sym'], [xs[2], xs[3], rs, pass === false ? 'badt' : 'sym']]
+    .forEach(([x1, x2, s1, cls], i) => {
+      const lo = Math.min(x1, x2); const hi = Math.max(x1, x2); const w = s1.length * 7;
+      let x = (lo + hi) / 2 - w / 2;
+      if (hi - lo < w + 4) x = i === 0 ? lo - 5 - w : hi + 5;
+      x = Math.max(x, free);
+      g += text(x, yC + 14, s1, { cls, anchor: 'start' });
+      free = x + w + 6;
+    });
+
+  // Legend with the live values.
+  const x0 = 252;
+  let y = 30;
+  const val = (mm, d = 3) => (ok ? L(mm, d) : '—');
+  const row = (sw, value, desc, vcls = 'val') => {
+    const out = sw(y) + text(x0 + 22, y, value, { cls: vcls, anchor: 'start' }) + text(x0 + 92, y, desc, { cls: 'lbl', anchor: 'start' });
+    y += 15.5;
+    return out;
+  };
+  const sym = (ch) => (yy) => text(x0 + 6, yy, ch, { cls: 'sym' });
+  const box = (cls) => (yy) => rect(x0, yy - 9, 13, 10, cls);
+  const ringSw = (cls) => (yy) => circle(x0 + 6.5, yy - 4, 5, cls);
+  g += row(box('cu'), val(D), t(padGiven ? 'ps_dgPad' : 'ps_dgMinPad'))
+    + row(sym('a'), val(a), t('ps_dgMaxHole'))
+    + row(sym('b'), val(b), t('ps_dgMinRing'))
+    + row(sym('c'), val(c), t('ps_dgAllow'));
+  g += text(x0, y, ok ? `a + 2b + c = ${L(landExt)}` : 'a + 2b + c', { cls: ok ? 'val' : 'sym', anchor: 'start' });
+  y += 19;
+  g += row((yy) => rect(x0, yy - 9, 13, 10, 'zone') + rect(x0, yy - 9, 13, 10, 'dimline'), ok ? `±${L((a - minH) / 2)}` : '—', t('ps_dgTol'))
+    + row(ringSw('dim'), val(drill), t('ps_dgDrill'))
+    + row(ringSw(`wave2 ${tone === 'hi' ? '' : tone}`), val(ring), `${t('ps_dgWorst')}${pass === null ? '' : pass ? ' ✓' : ' ✗'}`,
+      pass === null ? 'val' : pass ? 'okt' : 'badt');
+  if (isLead) {
+    g += row(box('soft'), val(leadD), t('ps_dgLead'))
+      + row(sym('↔'), ok ? L(minH - leadD) : '—', t('ps_dgClear'));
+  }
+  g += text(8, 14, t('ps_dgScale'), { cls: 'title', anchor: 'start' });
+  return svg(440, 222, g, t('ps_dgAria'), { wide: true });
 }
 
 export default {
