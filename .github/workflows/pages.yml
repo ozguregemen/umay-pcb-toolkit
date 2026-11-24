@@ -28,7 +28,11 @@ jobs:
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # Job-level permissions replace the top-level ones, so list everything the
+    # job needs: checkout (contents), artifact lookup (actions), Pages deploy.
     permissions:
+      contents: read
+      actions: read
       pages: write
       id-token: write
     environment:
