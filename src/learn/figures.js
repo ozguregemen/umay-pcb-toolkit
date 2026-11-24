@@ -9,6 +9,9 @@ const L = (k) => esc(t(k));
 /** Figure built with the diagram kit (src/ui/svg.js); the caption doubles as the label. */
 const fig = (w, h, captionKey, body) => `<figure class="fig"><svg class="diagram" viewBox="0 0 ${w} ${h}" role="img" aria-label="${L(captionKey)}">${body}</svg><figcaption>${L(captionKey)}</figcaption></figure>`;
 
+/** For lesson files (their own `figures`): same markup with a ready caption in the reader's language. */
+export const figureFrom = (w, h, caption, body) => `<figure class="fig"><svg class="diagram" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(caption)}">${body}</svg><figcaption>${esc(caption)}</figcaption></figure>`;
+
 function stack(layers, title) {
   // layers: [{ kind: 'sig'|'gnd'|'pwr'|'core'|'pre'|'mask', label }]
   const rowH = { sig: 12, gnd: 12, pwr: 12, core: 28, pre: 18, mask: 8 };

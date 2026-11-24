@@ -4,6 +4,7 @@
 import { t } from '../i18n.js';
 import { esc, unitLabel, fmt } from './format.js';
 import { isImperial } from '../prefs.js';
+import { fromMm } from '../engine/units.js';
 import { icon } from './icons.js';
 import { addZoomButtons } from './zoom.js';
 
@@ -50,13 +51,27 @@ function defaultUnit(f) {
   return f.unit ?? f.units?.[0];
 }
 
+/**
+ * Default text of a number field. Length defaults are written in the field's
+ * first unit (mm); when the reader prefers mil they are converted, otherwise a
+ * 0.2 mm default would appear as 0.2 mil.
+ */
+function defaultRaw(f) {
+  if (f.default === undefined || f.default === null) return '';
+  const declared = f.unit ?? f.units?.[0];
+  if (typeof f.default === 'number' && f.pref === 'length' && declared === 'mm' && defaultUnit(f) === 'mil') {
+    return String(Number(fromMm(f.default, 'mil').toPrecision(3)));
+  }
+  return String(f.default);
+}
+
 function initialState(page, params) {
   const raw = {};
   const units = {};
   for (const f of fieldsOf(page)) {
     const p = params.get(f.key);
     if (f.type === 'number') {
-      raw[f.key] = p ?? (f.default === undefined || f.default === null ? '' : String(f.default));
+      raw[f.key] = p ?? defaultRaw(f);
       const u = params.get(`${f.key}_u`);
       units[f.key] = f.units?.includes(u) ? u : defaultUnit(f);
     } else if (f.type === 'text') {
@@ -178,8 +193,7 @@ function renderField(f, state, v) {
 function isDefaultField(f, state) {
   const val = state.raw[f.key];
   if (f.type !== 'number') return val === String(f.default);
-  const def = f.default === undefined || f.default === null ? '' : String(f.default);
-  return val === def && state.units[f.key] === defaultUnit(f);
+  return val === defaultRaw(f) && state.units[f.key] === defaultUnit(f);
 }
 
 function renderForm(page, state) {

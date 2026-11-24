@@ -5,6 +5,7 @@ import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { t, locale } from '../i18n.js';
 import { isImperial } from '../prefs.js';
 import { svg, rect, path, text, dimH, dimV, arrow, callout } from '../ui/svg.js';
+import { fabCheck } from '../ui/fabcheck.js';
 
 const strings = {
   tr: {
@@ -324,7 +325,7 @@ export default {
     });
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const main = heroes([
       ['vi_capTotal', `${fmt(r.totalCapacityA, 3)} <span class="u">A</span>`, `ΔT = ${fmt(r.deltaTC)} °C · ${r.count} ×`],
@@ -351,7 +352,10 @@ export default {
       r.parasitics && ['vi_res', si(r.parasitics.resonanceHz, 'Hz')],
       r.stub && ['vi_stubRes', si(r.stub.quarterWaveHz, 'Hz')],
     ]));
-    return main + messages('warn', r.warnings) + block('results', dc) + hf
+    // Fab check: hole, ring on the pad D1 and inner plane clearance (antipad D2).
+    const mm = (k) => toMm(v[k], u[k]);
+    const fab = fabCheck({ holeMm: mm('d'), padMm: mm('pad'), holeKind: 'via', holeCopperMm: (mm('ap') - mm('d')) / 2 });
+    return main + messages('warn', r.warnings) + block('results', dc) + hf + fab
       + formulaBlock([
         'A = π·(r_out² − r_in²),  r_in = d/2,  r_out = r_in + t',
         'R = ρ(T)·L / A  ,  R_total = R / n',

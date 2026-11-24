@@ -1,7 +1,7 @@
 // Per-viewer preferences kept in localStorage (all access guarded).
 
 const KEY = 'umay.prefs';
-const DEFAULTS = { units: 'metric', recent: [] };
+const DEFAULTS = { units: 'metric', recent: [], fab: 'none' };
 const listeners = new Set();
 
 function load() {

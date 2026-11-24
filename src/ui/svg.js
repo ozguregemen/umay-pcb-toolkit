@@ -138,8 +138,10 @@ export const ground = (x, y) => `<path class="wire" d="M${f(x)},${f(y)}v6M${f(x 
 
 /**
  * Two-terminal component between (x1,y1) and (x2,y2) — horizontal or vertical.
- * kind: 'R' | 'C' | 'L' | 'D' | 'LED' | 'X' (crystal) | 'V' (DC source, + at
- * the first point) | 'AC' (sine source) | 'I' (current source) | 'SW' (switch).
+ * kind: 'R' | 'NTC' (thermistor) | 'F' (fuse) | 'FB' (ferrite bead) | 'C' | 'L' |
+ * 'D' | 'Z' (zener, cathode at the second point) | 'TVS' (bidirectional) | 'LED' |
+ * 'X' (crystal) | 'V' (DC source, + at the first point) | 'AC' (sine source) |
+ * 'I' (current source) | 'SW' (switch).
  * opts: name, value (live, accent colour unless valueCls is given), flip (labels
  * on the other side), hi (accent outline), dashed (parasitic / optional part).
  */
@@ -148,7 +150,7 @@ export function twoTerm(kind, x1, y1, x2, y2, { name, value, flip = false, hi = 
   const cx = (x1 + x2) / 2;
   const cy = (y1 + y2) / 2;
   const len = horiz ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
-  const body = { R: 34, C: 10, L: 36, D: 16, LED: 16, X: 18, V: 26, AC: 26, I: 26, SW: 26 }[kind] ?? 30;
+  const body = { R: 34, NTC: 34, F: 28, FB: 24, C: 10, L: 36, D: 16, Z: 16, TVS: 28, LED: 16, X: 18, V: 26, AC: 26, I: 26, SW: 26 }[kind] ?? 30;
   const half = Math.min(body, len - 8) / 2;
   const dir = horiz ? Math.sign(x2 - x1) || 1 : Math.sign(y2 - y1) || 1;
   const dash = dashed ? ' dash' : '';
@@ -164,6 +166,12 @@ export function twoTerm(kind, x1, y1, x2, y2, { name, value, flip = false, hi = 
   let upright = ''; // drawn without rotation (the sine of an AC source)
   switch (kind) {
     case 'R': g = `<rect class="${comp}" x="-17" y="-6.5" width="34" height="13" rx="1"/>`; break;
+    // Thermistor: resistor crossed by a bent line (IEC 60617).
+    case 'NTC': g = `<rect class="${comp}" x="-17" y="-6.5" width="34" height="13" rx="1"/><path class="${line}" d="M-14,11L10,-11h7"/>`; break;
+    case 'F': g = `<rect class="${comp}" x="-14" y="-5.5" width="28" height="11" rx="1"/><path class="${line}" d="M-14,0H14"/>`; break;
+    case 'FB': g = `<rect class="${comp} fill-ink" x="-12" y="-6" width="24" height="12" rx="1.5"/>`; break;
+    case 'Z': g = `<path class="${comp}" d="M-7,-8L7,0L-7,8Z"/><path class="wire" d="M4,-11L7,-8V8L10,11"/>`; break;
+    case 'TVS': g = `<path class="${comp}" d="M-13,-8L0,0L-13,8Z"/><path class="${comp}" d="M13,-8L0,0L13,8Z"/><path class="wire" d="M-3,-11L0,-8V8L3,11"/>`; break;
     case 'C': g = `<path class="${line}" d="M-4,-11V11M4,-11V11" style="stroke-width:2.4"/>`; break;
     case 'L': g = `<path class="${line}" d="M-18,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0a4.5,4.5 0 0 1 9,0"/>`; break;
     case 'AC':
@@ -195,6 +203,43 @@ export function twoTerm(kind, x1, y1, x2, y2, { name, value, flip = false, hi = 
     if (value) labels += text(ax, cy + 12, value, { cls: valueCls, anchor });
   }
   return leads + bodySvg + labels;
+}
+
+/**
+ * Op-amp triangle, left edge at x, centred on y, output tip at (x + size, y).
+ * Inputs: inverting (−) at (x, y − size/4), non-inverting (+) at (x, y + size/4);
+ * plusTop swaps them. Draw the input/output wires to those points yourself.
+ */
+export function opamp(x, y, { size = 44, plusTop = false, cls = 'comp' } = {}) {
+  const h = size / 2;
+  const q = size / 4;
+  const yMinus = plusTop ? y + q : y - q;
+  const yPlus = plusTop ? y - q : y + q;
+  return `<path class="${cls}" d="M${f(x)},${f(y - h)}L${f(x)},${f(y + h)}L${f(x + size)},${f(y)}Z"/>`
+    + text(x + 8, yMinus + 4, '−', { cls: 'name' }) + text(x + 8, yPlus + 4, '+', { cls: 'name' });
+}
+
+/** NPN transistor: base pin (x − 18, y), collector (x + 12, y − 26), emitter (x + 12, y + 26). */
+export function npn(x, y) {
+  return circle(x + 5, y, 16, 'wire')
+    + `<path class="wire" d="M${f(x - 18)},${f(y)}H${f(x)}"/>`
+    + `<path class="wire" style="stroke-width:2.6" d="M${f(x)},${f(y - 10)}V${f(y + 10)}"/>`
+    + `<path class="wire" d="M${f(x)},${f(y - 5)}L${f(x + 12)},${f(y - 14)}V${f(y - 26)}M${f(x)},${f(y + 5)}L${f(x + 12)},${f(y + 14)}V${f(y + 26)}"/>`
+    + head(x + 12, y + 14, Math.atan2(9, 12));
+}
+
+/**
+ * Enhancement MOSFET: gate pin (x − 18, y), drain (x + 12, y − 26), source
+ * (x + 12, y + 26). N-channel by default (body arrow points in); p: true for
+ * P-channel (arrow out — put the source at the top in your wiring).
+ */
+export function mosfet(x, y, { p = false } = {}) {
+  return circle(x + 5, y, 17, 'wire')
+    + `<path class="wire" d="M${f(x - 18)},${f(y)}H${f(x - 5)}"/>`
+    + `<path class="wire" style="stroke-width:2.2" d="M${f(x - 5)},${f(y - 10)}V${f(y + 10)}"/>`
+    + `<path class="wire" style="stroke-width:2.6" d="M${f(x)},${f(y - 12)}V${f(y - 6)}M${f(x)},${f(y - 3)}V${f(y + 3)}M${f(x)},${f(y + 6)}V${f(y + 12)}"/>`
+    + `<path class="wire" d="M${f(x)},${f(y - 9)}H${f(x + 12)}V${f(y - 26)}M${f(x)},${f(y + 9)}H${f(x + 12)}V${f(y + 26)}M${f(x + 12)},${f(y + 9)}V${f(y)}H${f(x + (p ? 1 : 5))}"/>`
+    + (p ? head(x + 11, y, 0) : head(x + 1, y, Math.PI));
 }
 
 /** Inverter (logic NOT / oscillator amplifier): input at x, output at x + 30. */

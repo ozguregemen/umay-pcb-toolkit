@@ -26,6 +26,11 @@ export const LESSONS = [
   { id: 'rf-antennas', part: 'advanced', minutes: 12, tools: ['antenna', 'inductor', 'impedance', 'reflection'] },
   { id: 'pdn', part: 'advanced', minutes: 12, tools: ['pdn', 'dcdc'] },
   { id: 'thermal', part: 'advanced', minutes: 10, tools: ['thermal', 'via', 'trace'] },
+  { id: 'power-layout', part: 'advanced', minutes: 12, tools: ['dcdc', 'mosfet', 'snubber', 'pdn', 'thermal'] },
+  { id: 'grounding-emc', part: 'advanced', minutes: 12, tools: ['emc', 'signal', 'crosstalk', 'stackup'] },
+  { id: 'esd-protection', part: 'advanced', minutes: 10, tools: ['spacing', 'trace', 'fusing', 'inrush'] },
+  { id: 'schematic-review', part: 'advanced', minutes: 12, tools: ['divider', 'i2c', 'switch', 'led', 'crystal'] },
+  { id: 'bring-up', part: 'advanced', minutes: 12, tools: ['shunt', 'battery', 'inrush', 'ohm'] },
   { id: 'dfm', part: 'advanced', minutes: 10, tools: ['ipcref', 'padstack', 'spacing'] },
   { id: 'glossary', part: 'reference', minutes: 5, tools: [] },
 ];
@@ -120,7 +125,11 @@ export async function mountLesson(root, id) {
   }
   const lesson = mod.default;
   const md = lesson.body[getLang()] ?? lesson.body.en;
-  const { html, toc } = render(md, t('learn_quiz'));
+  // Lesson figures receive the language: { name: (lang) => '<figure>…' }.
+  const figs = lesson.figures
+    ? Object.fromEntries(Object.entries(lesson.figures).map(([k, fn]) => [k, () => fn(getLang())]))
+    : null;
+  const { html, toc } = render(md, t('learn_quiz'), figs);
   const idx = LESSONS.indexOf(meta);
   const prev = LESSONS[idx - 1];
   const nextL = LESSONS[idx + 1];

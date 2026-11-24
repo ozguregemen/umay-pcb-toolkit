@@ -320,6 +320,7 @@ select.unit { cursor: pointer; }
 .diagram .bridge { stroke: var(--focus); fill: none; stroke-dasharray: 4 3; stroke-linecap: butt; }
 .diagram .dash { stroke-dasharray: 4 3; }
 .diagram .faded { opacity: .75; }
+.diagram .comp.fill-ink { fill: var(--text); }
 .diagram .diel { fill: var(--diel); }
 .diagram .mask { fill: var(--mask); opacity: .55; }
 .diagram .hole { fill: var(--surface); stroke: var(--border-strong); }
@@ -552,3 +553,16 @@ a.btn { text-decoration: none; }
   .zoom-btn { position: static; margin: 6px 0 0 auto; }
 }
 @media print { .zoom-btn { display: none !important; } }
+
+/* ---------- Interface rules (src/pages/interfaces.js) ---------- */
+.if-rules th { width: 32%; }
+.if-rules td { line-height: 1.45; }
+.if-rules .if-v { font-weight: 650; color: var(--text); }
+.if-rules .badge { margin: 4px 2px 0 0; font-weight: 600; }
+.if-open { margin: 2px 0 6px; }
+.if-open .btn { height: auto; min-height: 34px; padding: 7px 12px; line-height: 1.3; text-decoration: none; white-space: normal; text-align: left; }
+.if-open small { display: block; font-weight: 500; color: var(--muted); margin-top: 2px; }
+.if-src { margin: 4px 0 0; padding-left: 22px; font-size: 13px; color: var(--muted); }
+.if-src li { margin: 4px 0; }
+.if-src b { color: var(--text); font-weight: 600; }
+.if-src a { overflow-wrap: anywhere; }

@@ -5,6 +5,7 @@ import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
 import { svg, rect, circle, path, poly, text, dimH, dimV, arrow } from '../ui/svg.js';
+import { fabCheck } from '../ui/fabcheck.js';
 
 const strings = {
   tr: {
@@ -390,7 +391,7 @@ export default {
     });
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     let main;
     if (r.mode === 'width') main = hero('tw_width', Wh(r.widthMil), Wsub(r.widthMil));
@@ -454,6 +455,8 @@ export default {
         'W = A / t,   t = oz · 1.378 mil',
       ], 'tw_note2221', ['IPC-2221B §6.2']);
 
-    return main + messages('warn', r.warnings) + details + mods + compare + dc + formula;
+    // Fab check: the (final) width against the fabricator's minimum for this copper weight (foil, without plating).
+    const fab = fabCheck({ traceMm: r.widthMil * MM_PER_MIL, oz: thicknessToMil(v.t, u.t) / 1.378, inner: v.std === 'ipc2221' && v.layer === 'int' });
+    return main + messages('warn', r.warnings) + details + mods + compare + dc + fab + formula;
   },
 };

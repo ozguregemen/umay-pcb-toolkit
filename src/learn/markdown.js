@@ -5,7 +5,7 @@
 // Inline:  **bold**, _italic_, `code`, [text](url),
 //          [[calc:trace?I=3&dT=20|Label]]  → button that opens a calculator
 //          [[lesson:id|Label]]             → link to another lesson
-//          [[fig:name]] on its own line    → figure from figures.js
+//          [[fig:name]] on its own line    → figure from the lesson (`figures`) or figures.js
 
 import { esc } from '../ui/format.js';
 import { figure } from './figures.js';
@@ -115,7 +115,7 @@ export function blocks(md, quizLabel = 'Quiz', toc = null) {
       continue;
     }
     const fig = trimmed.match(/^\[\[fig:([\w-]+)\]\]$/);
-    if (fig) { flush(); out.push(figure(fig[1])); continue; }
+    if (fig) { flush(); out.push(localFigures?.[fig[1]] ? localFigures[fig[1]]() : figure(fig[1])); continue; }
     if (trimmed.startsWith('>')) {
       flush();
       const group = [];
@@ -155,8 +155,17 @@ export function blocks(md, quizLabel = 'Quiz', toc = null) {
   return out.join('\n');
 }
 
-export function render(md, quizLabel) {
+// Figures defined by the lesson itself ({ name: () => '<figure>…' }), looked up
+// before the shared ones in figures.js.
+let localFigures = null;
+
+export function render(md, quizLabel, figures = null) {
   const toc = [];
-  const html = blocks(md, quizLabel, toc);
-  return { html, toc };
+  localFigures = figures;
+  try {
+    const html = blocks(md, quizLabel, toc);
+    return { html, toc };
+  } finally {
+    localFigures = null;
+  }
 }

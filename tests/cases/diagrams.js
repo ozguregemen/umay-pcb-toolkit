@@ -9,8 +9,18 @@ import { TOOLS } from '../../src/registry.js';
 import { registerStrings, setLang, getLang } from '../../src/i18n.js';
 import { parseNumber } from '../../src/ui/calculator.js';
 import { figure, figureNames, figureStrings } from '../../src/learn/figures.js';
+import { LESSONS } from '../../src/learn/index.js';
 
-const pages = await Promise.all(TOOLS.map(async (tool) => (await tool.load()).default));
+// A page or lesson that fails to load is reported by a test instead of
+// breaking the whole runner.
+const loaded = await Promise.allSettled(TOOLS.map((tool) => tool.load()));
+const pages = loaded.filter((r) => r.status === 'fulfilled').map((r) => r.value.default);
+const loadErrors = loaded.flatMap((r, i) => (r.status === 'rejected' ? [`${TOOLS[i].id}: ${r.reason?.message ?? r.reason}`] : []));
+const lessonMods = await Promise.allSettled(LESSONS.map((l) => import(`../../src/learn/lessons/${l.id}.js`)));
+const lessonFigures = lessonMods.flatMap((r, i) => (r.status === 'fulfilled'
+  ? Object.entries(r.value.default.figures ?? {}).map(([name, fn]) => [`${LESSONS[i].id}/${name}`, fn])
+  : []));
+for (const r of lessonMods) if (r.status === 'rejected') loadErrors.push(`lesson: ${r.reason?.message ?? r.reason}`);
 for (const p of pages) if (p.strings) registerStrings(p.strings);
 registerStrings(figureStrings);
 
@@ -111,6 +121,10 @@ function inBothLanguages(fn) {
 const withDiagram = pages.filter((p) => p.diagram);
 
 export const cases = [
+  ['pages and lessons: every module loads', () => {
+    ok(loadErrors.length === 0, `\n${loadErrors.join('\n')}`);
+  }],
+
   ['diagrams: every calculator diagram renders clean SVG in TR and EN', () => {
     ok(withDiagram.length >= 20, `expected ≥ 20 pages with diagrams, got ${withDiagram.length}`);
     const problems = [];
@@ -146,10 +160,13 @@ export const cases = [
     ok(names.length >= 8, 'figures registered');
     const problems = [];
     const counts = new Map();
+    // Shared figures (figures.js) and figures a lesson defines itself.
+    const all = [...names.map((n) => [n, () => figure(n)]), ...lessonFigures.map(([n, fn]) => [n, (lang) => fn(lang)])];
     inBothLanguages((lang) => {
-      for (const name of names) {
-        const out = figure(name);
-        if (!out.includes('<svg')) problems.push(`${lang}:${name} drew nothing`);
+      for (const [name, draw] of all) {
+        let out;
+        try { out = draw(lang); } catch (e) { problems.push(`${lang}:${name} threw ${e.message}`); continue; }
+        if (!out?.includes('<svg')) { problems.push(`${lang}:${name} drew nothing`); continue; }
         for (const b of svgProblems(out)) problems.push(`${lang}:${name}: ${b}`);
         const n = geometryNumbers(out);
         if (counts.has(name) && counts.get(name) !== n) problems.push(`${name}: geometry differs between TR and EN`);

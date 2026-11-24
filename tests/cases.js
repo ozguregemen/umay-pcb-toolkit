@@ -6,6 +6,15 @@ import { cases as si } from './cases/si.js';
 import { cases as power } from './cases/power.js';
 import { cases as circuit } from './cases/circuit.js';
 import { cases as extra } from './cases/extra.js';
+import { cases as matching } from './cases/matching.js';
+import { cases as interfaces } from './cases/interfaces.js';
+import { cases as stackup } from './cases/stackup.js';
+import { cases as circuit2 } from './cases/circuit2.js';
+import { cases as power2 } from './cases/power2.js';
 import { cases as diagrams } from './cases/diagrams.js';
 
-export const cases = [...pcb, ...si, ...power, ...circuit, ...extra, ...diagrams];
+export const cases = [
+  ...pcb, ...si, ...power, ...circuit, ...extra,
+  ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
+  ...diagrams,
+];

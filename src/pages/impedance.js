@@ -82,6 +82,7 @@ const strings = {
     warn_embeddedCover: 'Kalın üst dielektrikte gömülü microstrip stripline’a yaklaşır; asimetrik stripline’ı da değerlendirin.',
     warn_noTanD: 'tan δ girilmedi; dielektrik kaybı sıfır kabul edildi.',
     warn_skinThick: 'Deri kalınlığı bakır kalınlığından büyük; bu frekansta iletken kaybı yaklaşımı iyimserdir.',
+    im_ifLink: 'USB, PCIe, DDR, Ethernet… için hedef empedans ve eşleme kuralları: Arayüz tasarım kuralları',
   },
   en: {
     im_modeAnalyze: 'Geometry → impedance',
@@ -159,6 +160,7 @@ const strings = {
     warn_embeddedCover: 'With a thick cover, embedded microstrip approaches stripline; also check asymmetric stripline.',
     warn_noTanD: 'No tan δ given; dielectric loss assumed zero.',
     warn_skinThick: 'Skin depth exceeds the copper thickness; the conductor-loss estimate is optimistic at this frequency.',
+    im_ifLink: 'Target impedance and matching rules for USB, PCIe, DDR, Ethernet…: Interface design rules',
   },
 };
 
@@ -179,10 +181,12 @@ const EXAMPLES = {
   coax: { w: 0.9, h: 2.95, er: 2.25 },
   twowire: { w: 0.5, h: 1.5, er: 1 },
 };
-// Common interface targets (check the interface specification and your fabricator).
+// Common interface targets (check the interface specification and your fabricator;
+// sources and per-vendor values: Interface design rules page, src/engine/interfaces.js).
 const TARGETS = [
   { label: 'RF 50 Ω', value: 50 }, { label: 'Video 75 Ω', value: 75 }, { label: 'PCIe Gen3+ 85 Ω', value: 85 },
   { label: 'USB 90 Ω', value: 90 }, { label: 'Ethernet / LVDS / HDMI 100 Ω', value: 100 },
+  { label: 'DDR4/DDR5 40 Ω', value: 40 }, { label: 'CAN / RS-485 120 Ω', value: 120 },
 ];
 
 const FORMULAS = {
@@ -390,6 +394,7 @@ export default {
       ]));
     }
     return main + chk + messages('warn', r.warnings) + block('results', details) + loss
+      + `<p class="note"><a href="#/interfaces">${esc(t('im_ifLink'))}</a></p>`
       + formulaBlock([...FORMULAS[r.structure], ...COMMON], 'im_note', [
         'Hammerstad & Jensen, IEEE MTT-S 1980', 'Wheeler, IEEE T-MTT 1978', 'Wadell, Transmission Line Design Handbook', 'IPC-2141A', 'J. Mears, National AN-905 (1996)']);
   },

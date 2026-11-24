@@ -40,6 +40,7 @@ const strings = {
     an_dgMatch: 'π eşleştirme',
     an_dgRad: 'ışıyan kenarlar',
     an_dgFeed: 'besleme',
+    an_matchLink: 'VNA ile ölçtüğünüz besleme empedansı için π (veya L) eşleştirme değerlerini hesaplayın:',
     an_note: 'Bu değerler başlangıç noktasıdır. Toprak düzleminin boyutu, kutu, pil ve yakındaki bileşenler rezonansı kaydırır; son ayar vektör ağ analizörüyle (VNA) yapılır. Monopol/IFA beslemesine π eşleştirme ağı (3 pad) bırakmak, ayarı yeniden kart üretmeden yapmayı sağlar. Yama formülleri Balanis’in iletim hattı modelinden; giriş direnci ve bant genişliği yaklaşık değerlerdir.',
     err_inputs: 'Frekans, εr (> 1) ve kalınlık sıfırdan büyük olmalı.',
     warn_patchThick: 'h/λ0 > 0,05: kalın alt tabanda yüzey dalgaları ve formül hatası artar.',
@@ -80,6 +81,7 @@ const strings = {
     an_dgMatch: 'π match',
     an_dgRad: 'radiating edges',
     an_dgFeed: 'feed',
+    an_matchLink: 'Compute π (or L) matching values for the feed impedance you measured with a VNA:',
     an_note: 'These are starting values. Ground-plane size, enclosure, battery and nearby parts shift the resonance; final tuning is done with a vector network analyser (VNA). Leaving a π matching network (3 pads) at the monopole/IFA feed lets you tune without a new board spin. Patch formulas follow Balanis’ transmission-line model; input resistance and bandwidth are approximate.',
     err_inputs: 'Frequency, εr (> 1) and thickness must be greater than zero.',
     warn_patchThick: 'h/λ0 > 0.05: surface waves and formula error grow on thick substrates.',
@@ -200,7 +202,8 @@ export default {
           ['an_half', mm(r.halfDipoleMm, 1)],
           ['an_groundMin', mm(r.groundMinMm, 0)],
         ]))
-        + formulaBlock(['λ0 = c / f', 'εeff ≈ (εr + 1)/2  (printed) · 1 (wire)', 'L = λ0 / (4·√εeff)'], 'an_note', ['C. A. Balanis, Antenna Theory, 4th ed.', 'TI AN058 / DN035 (PCB antennas)']);
+        + formulaBlock(['λ0 = c / f', 'εeff ≈ (εr + 1)/2  (printed) · 1 (wire)', 'L = λ0 / (4·√εeff)'], 'an_note', ['C. A. Balanis, Antenna Theory, 4th ed.', 'TI AN058 / DN035 (PCB antennas)'])
+        + `<p class="note">${esc(t('an_matchLink'))} <a href="#/matching">${esc(t('tool_matching'))}</a></p>`;
     }
     return heroes([['an_W', `${fixed(r.wMm, 2)} <span class="u">mm</span>`], ['an_L', `${fixed(r.lMm, 2)} <span class="u">mm</span>`]])
       + messages('warn', r.warnings)

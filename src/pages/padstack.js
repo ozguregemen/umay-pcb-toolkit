@@ -5,6 +5,7 @@ import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
 import { svg, rect, circle, path, ring as annulus, text, dimH, arrow } from '../ui/svg.js';
+import { fabCheck } from '../ui/fabcheck.js';
 
 const strings = {
   tr: {
@@ -284,7 +285,7 @@ export default {
     });
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const main = heroes([['ps_landExt', Lh(r.landExt)], ['ps_landInt', Lh(r.landInt)]]);
     const c = r.check;
@@ -311,6 +312,9 @@ export default {
         r.aspectRatio && ['ps_ar', `${fixed(r.aspectRatio, 1)} : 1`],
       ]))
       + chk
+      // Fab check: nominal finished hole and the designed pad (or the computed minimum land).
+      + fabCheck({ holeMm: r.nominalHole, padMm: c ? c.padMm : r.landExt, holeKind: v.k === 'via' ? 'via' : 'pth',
+        boardMm: Number.isFinite(v.b) ? toMm(v.b, u.b) : undefined })
       + formulaBlock([
         'Component hole:  d_hole,min = d_lead,max + 0.25 / 0.20 / 0.15 mm   (A / B / C)',
         '                 d_hole,max ≤ d_lead,min + 0.7 / 0.7 / 0.6 mm',

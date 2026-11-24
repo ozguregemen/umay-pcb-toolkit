@@ -60,7 +60,9 @@ Bu belge, Umay PCB Toolkit'i yaygın PCB ve elektronik hesaplayıcılarıyla kar
 | Her sonuçla formül ve kaynak | ✓ | ◐ | ◐ | ◐ |
 | Paylaşılabilir bağlantı, metin özeti, yazdırma | ✓ | ◐ (yazdırma) | ✗ | ◐ (hesapla kayıt) |
 | Platform | Her tarayıcı, mobil, açık kaynak (MIT) | Yalnız Windows, kapalı | Masaüstü, GPL | Web |
-| Stack-up tasarımcısı | ✗ | ✗ | ✗ | ✓ |
+| Stack-up tasarımcısı | ✓ **yeni** (kapalı form) | ✗ | ✗ | ✓ |
+| Empedans eşleştirme, Smith abağı | ✓ **yeni** | ✗ | ✗ | — (incelenmedi) |
+| Üretici kabiliyet kontrolü | ✓ **yeni** (JLCPCB, PCBWay, Eurocircuits) | ✗ | ✗ | ◐ (kendi üretimi) |
 | Alan çözücü | ✗ | ✗ | ✗ | ✓ |
 
 ## Onların daha iyi yaptığı ve bu sürümde eklenenler
@@ -76,9 +78,9 @@ Bu belge, Umay PCB Toolkit'i yaygın PCB ve elektronik hesaplayıcılarıyla kar
 
 ## Umay'ın öne çıktığı yerler
 
-- **Öğrenme yolu:** incelenen araçların hiçbirinde sıralı ders, rehberli örnek ve "kendini sına" soruları yok. Umay'da 12 ders var; her ders örnek değerlerle hesaplayıcıyı açar ve dersteki sayılar hesaplayıcıyla doğrulanmıştır.
+- **Öğrenme yolu:** incelenen araçların hiçbirinde sıralı ders, rehberli örnek ve "kendini sına" soruları yok. Umay'da 18 ders var; her ders örnek değerlerle hesaplayıcıyı açar ve dersteki sayılar hesaplayıcıyla doğrulanmıştır.
 - **Şeffaflık:** IPC-2152 yöntemi ve tüm formüller açık; Saturn'ün IPC-2152 yöntemi belgelenmemiştir ve kullanıcılar sonuçları sorgulamaktadır.
-- **Doğrulama:** 76 motor testi her değişiklikte otomatik çalışır; değerler elle veya tam çözümlerle hesaplanmıştır.
+- **Doğrulama:** motor testleri ve tüm şemaların TR/EN testi her değişiklikte otomatik çalışır; değerler elle veya tam çözümlerle hesaplanmıştır.
 - **Tolerans analizi:** bileşen toleranslarının çıktıya etkisi (en kötü durum ve RSS) incelenen araçlarda yoktur.
 - **Erişim:** kurulum gerektirmez, her işletim sisteminde ve telefonda çalışır, açık kaynaktır, sonuçlar bağlantıyla paylaşılır.
 
@@ -86,10 +88,9 @@ Bu belge, Umay PCB Toolkit'i yaygın PCB ve elektronik hesaplayıcılarıyla kar
 
 | Özellik | Neden şimdi değil |
 |---|---|
-| Stack-up tasarımcısı (katman yığını, kalınlık, malzeme, empedans profili) | Büyük bir özellik; ayrı bir çalışma olarak planlanmalı |
 | Alan çözücü, lehim maskesi etkisi, broadside ve dual stripline | Kapalı form denklemler güvenilir değil; 2B sayısal çözüm gerekir |
 | IEC 60664-1 / IEC 62368-1 creepage ve clearance | Ücretli standart tabloları; doğrulanmış kaynak gerekir |
 | Kablo akım taşıma kapasitesi (AWG ampacity) | Değerler kurulum koşuluna göre değişir, ortak bir standart yok |
 | Diferansiyel via empedansı, S-parametre / Touchstone çıktısı | Sayısal modelleme gerektirir |
-| NTC, Sallen-Key filtre, pil ömrü, galvanik korozyon tablosu | Faydalı ama daha düşük öncelikli |
+| Galvanik korozyon tablosu | Faydalı ama daha düşük öncelikli |
 | Malzeme kütüphanesi (Dk/Df frekansa göre) | Üretici verileri lisans ve doğrulama ister; şimdilik hazır değer çipleri var |

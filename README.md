@@ -8,14 +8,17 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 | Area | Calculator | Method |
 |---|---|---|
-| Learn | **Learning path** | 13 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
+| Learn | **Learning path** | 18 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
 | PCB & IPC | **Trace width & current** | IPC-2152 baseline-chart fit with copper, board-thickness and plane modifiers; IPC-2221. Solves width, current or temperature rise; etch factor, plating, current density, AC resistance; DC losses; side-by-side comparison. |
 | | **Conductor spacing** | IPC-2221B Table 6-1 (B1–A7), > 500 V rule, inverse (spacing → voltage), mains-safety warning. |
 | | **Via** | DC resistance, IPC-2221 current capacity, thermal resistance, parallel vias, Johnson L/C, impedance and rise-time degradation. |
 | | **Pad & annular ring** | IPC-2221 land = a + 2b + c, IPC-2222 lead-to-hole rules, IPC-6012 class checks. |
 | | **Fusing current** | Onderdonk (adiabatic) and Preece; trace or via; I²t. |
 | | **IPC rules reference** | Classes, producibility levels, annular ring, plating, defects, copper thickness, bow & twist, dielectric. |
+| | **Layer stack-up** | 2–10 layers from generic and published fabricator stack-ups (JLCPCB, PCBWay); total thickness vs target, symmetry, reference planes, impedance and target widths per signal layer, to-scale cross-section. |
+| | **Fab capability check** | JLCPCB, PCBWay, Eurocircuits and a generic IPC Level B preset; trace, via, pad, fan-out, spacing and stack-up pages check the design against the chosen fab's minimums. |
 | Signal integrity | **Impedance** | Hammerstad–Jensen microstrip, Wheeler stripline, asymmetric stripline, embedded microstrip, CPWG, differential pairs (AN-905); synthesis (target Z → width), loss, delay; IPC-2141 comparison. |
+| | **Interface design rules** | USB 2.0/3.x, PCIe Gen1–5, SATA, HDMI, MIPI D-PHY, LVDS, Ethernet (MDI, RGMII), DDR3/4/5, CAN, RS-485, I²C/SPI: impedance, skew and group matching, vias, reference planes, AC caps, termination — each value with its source (standards and vendor layout guides); skew ⇄ length converter; opens the impedance calculator with the target. |
 | | **SI basics** | Bandwidth, knee frequency, critical length, wavelength, skin depth, skew. |
 | | **Crosstalk** | Johnson / Brooks NEXT estimate, stripline, length factor, 3W rule, required gap. |
 | Power & thermal | **PDN & decoupling** | Target impedance, bulk capacitance, R-L-C capacitor bank impedance plot, plane capacitance. |
@@ -24,8 +27,20 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 | Signal integrity (more) | **Reflection & VSWR**, **RF attenuator** (Pi/T/bridged-T with standard values) | — |
 | RF & antennas | **Planar spiral inductor** | Mohan 1999 (square, hex, octagon, circle), to-scale drawing; NFC/RFID/wireless-power resonance: tuning capacitor, skin-effect AC resistance, coil Q, damping resistor for a target Q. |
 | | **PCB antenna** | Microstrip patch (Balanis transmission-line model: W, L, inset feed for 50 Ω, bandwidth, ground size) and quarter-wave monopole / IFA arm, with to-scale layout drawings. |
+| | **Impedance matching** | L (all solutions), π and T networks for complex source and load (Bowick, Pozar), E12/E24 rounding with the resulting return loss, bandwidth sweep, Smith-chart path. |
+| | **EMC helpers** | Stitching-via spacing (λ/20), slot resonance and rough shielding, LC / ferrite-bead filter with damping and response plot. |
 | Power (more) | **DC-DC buck/boost** | Inductor, output capacitor, duty, peak current (TI SLVA477/372). |
+| | **MOSFET losses** | Conduction with Rds(on)(Tj), gate-charge switching (TI SLUP169), Coss, Qrr, dead time, gate drive; junction temperature with thermal iteration. |
+| | **RC snubber** | Parasitic L/C from the ringing frequency with a test capacitor, damping resistor and capacitor, power (Nexperia AN11160, TI). |
+| | **Inrush & soft-start** | Hot-plug RLC peak, soft-start current and pass-element energy, gate-capacitor ramp, NTC limiter sizing. |
+| | **Battery life** | Duty-cycled sleep/active/burst profile, derating and self-discharge, presets for common cells. |
 | Circuit basics | **Ohm's law**, **voltage divider** (incl. regulator feedback and tolerance analysis), **LED resistor**, **RC/RL/LC**, **E-series finder**, **colour & SMD codes**, **series/parallel**, **crystal load & PPM**, **555 timer** | Standard formulas with E-series value selection. |
+| | **I²C pull-up** | Rp window from bus capacitance and speed mode (NXP UM10204), recommended E-series value, rise curve. |
+| | **Transistor switch** | BJT base resistor with forced β; MOSFET gate drive, Rds(on) loss, turn-on time, gate pull-down; flyback diode. |
+| | **Op-amp & active filter** | Inverting / non-inverting / difference gain with GBW bandwidth; unity-gain Sallen-Key low/high-pass (Butterworth, Bessel, Chebyshev) with standard values and GBW effect. |
+| | **NTC thermistor** | Beta and Steinhart–Hart (incl. three-point fit), divider design, ADC resolution in °C/LSB, self-heating. |
+| | **Current-sense shunt** | Shunt value, power and derating, ADC resolution, error budget (tolerance, TCR, gain, offset). |
+| | **ADC resolution** | LSB, quantisation noise, ideal SNR, ENOB, averaging gain, input scaling. |
 | Tools | **Unit converter** | Length, copper weight, temperature, dBm/W/V, dB, AWG. |
 
 See [docs/karsilastirma.md](docs/karsilastirma.md) for a comparison with Saturn PCB Toolkit, KiCad, Sierra Circuits, Polar, Rogers and others.

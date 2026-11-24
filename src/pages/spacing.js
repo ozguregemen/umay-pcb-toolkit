@@ -5,6 +5,7 @@ import { fixed, fmt, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
 import { svg, rect, path, text, dimH } from '../ui/svg.js';
+import { fabCheck } from '../ui/fabcheck.js';
 
 const strings = {
   tr: {
@@ -200,6 +201,8 @@ export default {
       + messages('warn', r.warnings)
       + rows([['sp_usedRow', esc(r.mode === 'voltage' && r.vmax === 0 ? '—' : rowLabel)]])
       + block('sp_tableTitle', table(r.band, r.col))
+      // Fab check: the spacing against the fabricator's minimum gap (B1 = internal layers).
+      + fabCheck({ spaceMm: r.mode === 'voltage' ? r.dMm : r.mm, oz: 1, inner: v.cat === 'B1' }, { note: `${t('fab_n1oz')} ${t('fab_nSpacing')}` })
       + formulaBlock([
         'V ≤ 500 V :  d = Table 6-1 [band(V), category]',
         `V > 500 V :  d = d(301–500 V) + c · (V − 500)   (${v.cat}: c = ${fmt(PER_VOLT[r.col])} mm/V)`,

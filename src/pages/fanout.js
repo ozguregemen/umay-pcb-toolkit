@@ -5,6 +5,7 @@ import { fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
 import { svg, rect, circle, text, dimH, dimV, arrow, bar } from '../ui/svg.js';
+import { fabCheck } from '../ui/fabcheck.js';
 
 const strings = {
   tr: {
@@ -211,8 +212,9 @@ export default {
     return fanout({ pitchMm: mm('p'), padMm: mm('d'), traceMm: mm('w'), spaceMm: mm('s'), viaPadMm: mm('v') });
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
+    const mm = (k) => (Number.isFinite(v[k]) ? toMm(v[k], u[k]) : undefined);
     return heroes([
       ['fo_traces', `${r.traces}`],
       ['fo_diag', `${r.diagTraces}`],
@@ -226,6 +228,8 @@ export default {
         ['fo_maxVia', r.maxViaPad > 0 ? L(r.maxViaPad) : '—'],
       ]))
       + (r.viaFits !== undefined ? block('fo_checks', checks([[r.viaFits, esc(t('fo_viaOk'))]])) : '')
+      // Fab check: escape traces on an outer 1 oz layer and the dog-bone via pad.
+      + fabCheck({ traceMm: mm('w'), spaceMm: mm('s'), oz: 1, viaPadMm: mm('v') }, { note: t('fab_n1oz') })
       + formulaBlock([
         'gap = pitch − pad,   diagonal gap = pitch·√2 − pad',
         'n = floor((gap − s) / (w + s))',
