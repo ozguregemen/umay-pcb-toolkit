@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Engine Tests</title>
+  <style>
+    body { font: 14px/1.5 ui-monospace, Consolas, monospace; margin: 24px; background: #fff; color: #111; }
+    .pass { color: #0a7d32; } .fail { color: #b3261e; }
+    pre { white-space: pre-wrap; margin: 0 0 0 1.5em; }
+  </style>
+</head>
+<body>
+  <h1>Umay PCB Toolkit — engine tests</h1>
+  <div id="out">Running…</div>
+  <script type="module">
+    import { cases } from './cases.js';
+    const out = document.getElementById('out');
+    out.textContent = '';
+    let failed = 0;
+    for (const [name, fn] of cases) {
+      const row = document.createElement('div');
+      try { fn(); row.className = 'pass'; row.textContent = '✓ ' + name; }
+      catch (e) {
+        failed++; row.className = 'fail'; row.textContent = '✗ ' + name;
+        const pre = document.createElement('pre'); pre.textContent = e.message; row.append(pre);
+      }
+      out.append(row);
+    }
+    const sum = document.createElement('h2');
+    sum.className = failed ? 'fail' : 'pass';
+    sum.textContent = failed ? `${failed} of ${cases.length} failed` : `All ${cases.length} passed`;
+    out.prepend(sum);
+    window.__testResult = { total: cases.length, failed };
+  </script>
+</body>
+</html>

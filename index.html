@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Umay PCB Toolkit</title>
+  <meta name="description" content="Open-source PCB calculators based on IPC rules: trace width (IPC-2221 / IPC-2152), impedance, conductor spacing and vias. Runs in the browser.">
+  <meta name="theme-color" content="#b5651d">
+  <meta property="og:title" content="Umay PCB Toolkit">
+  <meta property="og:description" content="Open-source PCB calculators based on IPC rules.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="assets/app.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    try { var th = localStorage.getItem('umay.theme'); if (th) document.documentElement.dataset.theme = th; } catch (e) {}
+  </script>
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/">
+        <img src="assets/icon.svg" alt="" width="28" height="28">
+        <span>Umay <b>PCB Toolkit</b></span>
+      </a>
+      <nav id="nav" class="nav" aria-label="Main"></nav>
+      <div class="top-actions">
+        <button id="lang-toggle" class="icon-btn" type="button">EN</button>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Theme">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="main" tabindex="-1">
+    <noscript><p>Umay PCB Toolkit requires JavaScript.</p></noscript>
+  </main>
+
+  <footer class="footer">
+    <p data-i18n="disclaimer"></p>
+    <p class="footer-links">
+      <a id="repo-link" href="" rel="noopener" data-i18n="sourceCode"></a>
+      <a href="tests/" data-i18n="testsLink"></a>
+      <span>MIT</span>
+    </p>
+  </footer>
+</body>
+</html>

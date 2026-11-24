@@ -1,0 +1,11 @@
+{
+  "name": "Umay PCB Toolkit",
+  "short_name": "Umay PCB",
+  "description": "Open-source PCB calculators based on IPC rules.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f5f2",
+  "theme_color": "#b5651d",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
