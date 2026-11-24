@@ -1,0 +1,45 @@
+// Inline stroke icons (24×24 grid, currentColor). Decorative: aria-hidden.
+
+const P = {
+  board: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h4l2 3h4M7 15h3"/><circle cx="17" cy="15" r="1.5"/>',
+  wave: '<path d="M2 12h3l2-6 3 12 3-12 3 12 2-6h4"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  resistor: '<path d="M2 12h4l1.5-4 3 8 3-8 3 8 1.5-4h4"/>',
+  swap: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
+  trace: '<path d="M3 17h5l3-10h10"/><path d="M3 21h18" opacity=".4"/>',
+  spacing: '<path d="M4 4v16M20 4v16M8 12h8M8 12l3-3M8 12l3 3M16 12l-3-3M16 12l-3 3"/>',
+  via: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/>',
+  pad: '<rect x="4" y="4" width="16" height="16" rx="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 4v4.5"/>',
+  fuse: '<rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 12c2-3 3 3 5 0s3 3 5 0"/>',
+  book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M9 7h6M9 11h6"/>',
+  impedance: '<path d="M3 18h18M5 18V9h14v9"/><rect x="9" y="6" width="6" height="3"/>',
+  crosstalk: '<path d="M3 8h18M3 16h18"/><path d="M8 9.5v5M12 9.5v5M16 9.5v5" stroke-dasharray="1.5 1.5"/>',
+  pdn: '<path d="M3 4v16h18"/><path d="M6 8c3 0 4 8 7 8s3-6 6-6"/>',
+  thermo: '<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/><path d="M12 9v7"/>',
+  ohm: '<path d="M5 19h4v-2a6 6 0 1 1 6 0v2h4"/>',
+  divider: '<path d="M12 2v4M12 18v4M12 12h7"/><rect x="9" y="6" width="6" height="5" rx="1"/><rect x="9" y="13" width="6" height="5" rx="1"/>',
+  led: '<path d="M6 12h3M15 12h3M9 7v10l6-5z"/><path d="M15 7v10M16 4l2-2M19 6l2-2"/>',
+  rc: '<path d="M2 12h3l1.5-3 2 6 2-6 1.5 3h3"/><path d="M15 7v10M18 7v10M18 12h4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>',
+  print: '<path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/>',
+  reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v4.6h4.6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  right: '<path d="m9 6 6 6-6 6"/>',
+  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  dash: '<path d="M6 12h12"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>',
+  github: '<path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.5a3 3 0 0 0-.8-2.3c2.7-.3 5.6-1.3 5.6-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.6 2.5 5.6 2.8 5.6 2.8a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.2 9.2c0 4.6 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V21"/>',
+};
+
+export function icon(name, size = 20) {
+  const d = P[name] ?? P.dash;
+  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${d}</svg>`;
+}

@@ -1,260 +1,220 @@
-// Trace width (current capacity) engine.
+// Trace current capacity.
 //
-// - IPC-2221 : classic chart-fit formula  I = k · ΔT^0.44 · A^0.725
-// - IPC-2152 : correction-factor model on top of the same base curve
-//              (airflow, altitude, conformal coating, pulsed current,
-//              copper thickness, nearby copper plane), followed by a
-//              PCB-class safety margin.
+// IPC-2221 — chart fit of the 1956 NBS data:  I = k · ΔT^0.44 · A^0.725
+//   k = 0.048 external, 0.024 internal; A in mil². Charts valid ≤ 35 A,
+//   ΔT 10–100 °C, 0.5–3 oz, width ≤ 400 mil.
 //
-// Ported from the original C# / Avalonia implementation
-// (Models/TraceWidthIpc2221.cs, TraceWidthIpc2152.cs, Ipc2152Factors.cs).
+// IPC-2152 — closed-form fit of the baseline ("universal") chart:
+//   A = (117.555·ΔT^−0.913 + 1.15) · I^(0.84·ΔT^−0.108 + 1.159)   [mil²]
+//   (J. Olson; published by L. Rozenblat, smps.us). Baseline: 0.070" (1.78 mm)
+//   polyimide board, 3 oz copper, still air, no copper plane; applies to
+//   internal and external conductors alike. Chart modifiers (multiply the
+//   area): copper thickness, board thickness, distance to a copper plane —
+//   curve fits of the IPC-2152 modifier charts.
 
-import { clamp, interp1d, interp2d } from './math.js';
-import { MIL_PER_OZ, MM_PER_MIL, M_PER_MIL } from './units.js';
+import { MIL_PER_OZ, M_PER_MIL, MM_PER_MIL } from './units.js';
 import { copperResistivity } from './copper.js';
 
 export const K_EXTERNAL = 0.048;
 export const K_INTERNAL = 0.024;
-export const EXP_DT = 0.44;
-export const EXP_AREA = 0.725;
+const B = 0.44;
+const C = 0.725;
 
-/** Cross-section area (mil²) that carries `currentA` at a rise of `deltaTC` (IPC-2221). */
+// ---------- IPC-2221 ----------
 export function ipc2221AreaMil2(currentA, deltaTC, isExternal) {
   const k = isExternal ? K_EXTERNAL : K_INTERNAL;
-  return Math.pow(currentA / (k * Math.pow(deltaTC, EXP_DT)), 1 / EXP_AREA);
+  return Math.pow(currentA / (k * Math.pow(deltaTC, B)), 1 / C);
 }
-
-/** Current (A) carried by a cross-section of `areaMil2` at a rise of `deltaTC` (IPC-2221). */
 export function ipc2221CurrentA(areaMil2, deltaTC, isExternal) {
   const k = isExternal ? K_EXTERNAL : K_INTERNAL;
-  return k * Math.pow(deltaTC, EXP_DT) * Math.pow(areaMil2, EXP_AREA);
+  return k * Math.pow(deltaTC, B) * Math.pow(areaMil2, C);
 }
-
-export function ipc2221WidthMil(currentA, deltaTC, thicknessMil, isExternal) {
-  return ipc2221AreaMil2(currentA, deltaTC, isExternal) / thicknessMil;
+export function ipc2221RiseC(currentA, areaMil2, isExternal) {
+  const k = isExternal ? K_EXTERNAL : K_INTERNAL;
+  return Math.pow(currentA / (k * Math.pow(areaMil2, C)), 1 / B);
 }
+export const ipc2221WidthMil = (currentA, deltaTC, thicknessMil, isExternal) =>
+  ipc2221AreaMil2(currentA, deltaTC, isExternal) / thicknessMil;
 
-// ---------------------------------------------------------------------------
-// IPC-2152 correction factors ("capacity multipliers": >1 means the trace can
-// carry more current, so a narrower trace is needed).
-// ---------------------------------------------------------------------------
-
-export const AIRFLOW = {
-  still: 1.0,
-  low: 1.25, // < 1 m/s
-  medium: 1.5, // 1–3 m/s
-  high: 1.9, // ≥ 5 m/s
-};
-
-export const COATING = {
-  none: 1.0,
-  thin: 0.925, // 25–50 µm
-  standard: 0.875, // 50–100 µm
-  thick: 0.8, // > 100 µm
-};
-
-export function airflowFactor(isExternal, airflow) {
-  const ext = AIRFLOW[airflow] ?? 1.0;
-  // Internal layers: minimal benefit (< ~5 %).
-  return isExternal ? ext : 1 + 0.05 * (ext - 1);
+// ---------- IPC-2152 ----------
+/** Baseline chart area (mil²) for current I (A) and rise ΔT (°C). */
+export function ipc2152BaseAreaMil2(currentA, deltaTC) {
+  return (117.555 * Math.pow(deltaTC, -0.913) + 1.15) * Math.pow(currentA, 0.84 * Math.pow(deltaTC, -0.108) + 1.159);
 }
-
-/** F = 1 − h / 15000, floored at 0.2. */
-export function altitudeFactor(altitudeM) {
-  return clamp(1 - Math.max(0, altitudeM) / 15000, 0.2, 1.0);
-}
-
-export function coatingFactor(coating) {
-  return COATING[coating] ?? 1.0;
-}
-
-const THK_OZ = [0.5, 1, 2, 3, 4, 6, 10];
-const THK_EXT = [0.7, 1.0, 1.45, 1.8, 2.1, 2.6, 3.4];
-const THK_INT = [0.65, 1.0, 1.5, 1.9, 2.25, 2.85, 3.8];
-export const THICKNESS_TABLE_RANGE_OZ = [THK_OZ[0], THK_OZ[THK_OZ.length - 1]];
-
-/** Empirical capacity multiplier vs 1 oz copper. */
-export function thicknessEmpiricalFactor(isExternal, copperOz) {
-  const oz = clamp(copperOz, THK_OZ[0], THK_OZ[THK_OZ.length - 1]);
-  return interp1d(oz, THK_OZ, isExternal ? THK_EXT : THK_INT);
-}
-
-/** The base formula already scales with t^0.725; correct it to the empirical curve. */
-export function thicknessCorrectionRatio(isExternal, copperOz) {
-  const oz = Math.max(0.01, copperOz);
-  return thicknessEmpiricalFactor(isExternal, oz) / Math.pow(oz, EXP_AREA);
-}
-
-const DUTY = [0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0];
-const FREQ = [1, 10, 100, 1000];
-const DUTY_TABLE = [
-  [3.0, 3.0, 3.0, 2.8],
-  [2.2, 2.2, 2.1, 2.0],
-  [1.8, 1.8, 1.7, 1.6],
-  [1.4, 1.4, 1.3, 1.3],
-  [1.2, 1.2, 1.1, 1.1],
-  [1.05, 1.05, 1.05, 1.0],
-  [1.0, 1.0, 1.0, 1.0],
-];
-export const DUTY_RANGE = [0.1, 1.0];
-export const FREQ_RANGE_HZ = [1, 1000];
-
-/** Pulsed-current multiplier. dutyCycle is a fraction (1 = continuous). */
-export function dutyCycleFactor(dutyCycle, frequencyHz) {
-  const d = clamp(dutyCycle, 0.1, 1.0);
-  if (d >= 0.999) return 1.0;
-  return interp2d(d, frequencyHz, DUTY, FREQ, DUTY_TABLE);
-}
-
-const PLANE_AREA = [0, 25, 100, 400]; // mm²
-const PLANE_WIDTH = [0.5, 1, 2, 3, 5]; // mm
-// Current with plane ÷ current without plane (1 oz, internal, 10 °C).
-const PLANE_TABLE = [
-  [1.0, 0.9 / 0.8, 1.0 / 0.8, 1.1 / 0.8],
-  [1.0, 1.6 / 1.4, 1.8 / 1.4, 2.0 / 1.4],
-  [1.0, 2.8 / 2.4, 3.2 / 2.4, 3.5 / 2.4],
-  [1.0, 3.9 / 3.3, 4.5 / 3.3, 5.0 / 3.3],
-  [1.0, 6.0 / 5.0, 7.0 / 5.0, 7.8 / 5.0],
-];
-export const PLANE_AREA_RANGE_MM2 = [0, 400];
-
-export function planeFactor(isExternal, planeAreaMm2, widthMm) {
-  if (!(planeAreaMm2 > 0)) return 1.0;
-  const f = interp2d(widthMm, planeAreaMm2, PLANE_WIDTH, PLANE_AREA, PLANE_TABLE);
-  // External layers get a smaller share of the plane benefit.
-  return isExternal ? 1 + 0.7 * (f - 1) : f;
-}
-
-export const CLASS_MARGIN = { 1: 1.2, 2: 1.3, 3: 1.5 };
-export const CLASS_MIN_WIDTH_MIL = { 1: 5, 2: 4, 3: 4 };
-
-const DEFAULT_ENV = {
-  airflow: 'still',
-  altitudeM: 0,
-  coating: 'none',
-  dutyCycle: 1,
-  frequencyHz: 1,
-  planeAreaMm2: 0,
-};
 
 /**
- * IPC-2152 width (mil) before class margin.
- * Iterates because the plane factor depends on the width itself.
+ * Copper-thickness modifier (baseline 3 oz = 1). For the same cross-section,
+ * thinner copper (a wider trace) runs cooler. Fits for 1 and 2 oz, linear
+ * between, 1-oz curve below 1 oz (conservative), 1.0 at and above 3 oz.
  */
-export function ipc2152WidthMil(currentA, deltaTC, copperOz, isExternal, env = {}) {
-  const e = { ...DEFAULT_ENV, ...env };
-  const tMil = Math.max(0.01, copperOz) * MIL_PER_OZ;
-  const dT = Math.max(0.1, deltaTC);
-  const base = (i) => ipc2221AreaMil2(i, dT, isExternal) / tMil;
-
-  const factors = {
-    airflow: airflowFactor(isExternal, e.airflow),
-    altitude: altitudeFactor(e.altitudeM),
-    coating: coatingFactor(e.coating),
-    duty: dutyCycleFactor(e.dutyCycle, e.frequencyHz),
-    thickness: thicknessCorrectionRatio(isExternal, copperOz),
-    plane: 1,
-  };
-  const nonPlane =
-    factors.airflow * factors.altitude * factors.coating * factors.duty * factors.thickness;
-
-  let widthMil = base(currentA);
-  for (let iter = 0; iter < 8; iter++) {
-    factors.plane = planeFactor(isExternal, e.planeAreaMm2, widthMil * MM_PER_MIL);
-    const total = Math.max(1e-9, nonPlane * factors.plane);
-    const next = base(currentA / total);
-    const done = Math.abs(next - widthMil) < 1e-6;
-    widthMil = next;
-    if (done) break;
-  }
-  factors.total = nonPlane * factors.plane;
-  return { widthMil, factors };
+export function copperModifier(copperOz, currentA) {
+  const ln = Math.log(Math.max(currentA, 1e-6));
+  const m1 = Math.min(1, -0.0318 * ln + 0.9128);
+  const m2 = Math.min(1, -0.0185 * ln + 0.9861);
+  if (copperOz <= 1) return m1;
+  if (copperOz <= 2) return m1 + (m2 - m1) * (copperOz - 1);
+  if (copperOz <= 3) return m2 + (1 - m2) * (copperOz - 2);
+  return 1;
 }
 
+/** Board-thickness modifier (baseline 0.070" = 1): thinner boards spread less heat. */
+export const boardModifier = (boardMil) => 25.959 * Math.pow(boardMil, -0.7666);
+
+/** Copper-plane modifier vs distance trace→plane (mil); 1 without a plane. */
+export const planeModifier = (distMil) => Math.min(1, 0.0031 * distMil + 0.4054);
+
+export function ipc2152Modifiers({ copperOz, currentA, boardMm, planeMm }) {
+  const copper = copperModifier(copperOz, currentA);
+  const board = boardMm > 0 ? boardModifier(boardMm / MM_PER_MIL) : 1;
+  const plane = planeMm > 0 ? planeModifier(planeMm / MM_PER_MIL) : 1;
+  return { copper, board, plane, total: copper * board * plane };
+}
+
+/** Adjusted IPC-2152 area (mil²). */
+export function ipc2152AreaMil2(currentA, deltaTC, env) {
+  const m = ipc2152Modifiers({ ...env, currentA });
+  return { area: ipc2152BaseAreaMil2(currentA, deltaTC) * m.total, base: ipc2152BaseAreaMil2(currentA, deltaTC), mods: m };
+}
+
+/** Geometric bisection for monotonic f on [lo, hi]; returns x with f(x) = 0. */
+function solve(f, lo, hi, increasing) {
+  let a = lo;
+  let b = hi;
+  for (let i = 0; i < 200; i++) {
+    const m = Math.sqrt(a * b);
+    const v = f(m);
+    if ((v > 0) === increasing) b = m; else a = m;
+    if (b / a - 1 < 1e-12) break;
+  }
+  return Math.sqrt(a * b);
+}
+
+export function ipc2152CurrentA(areaMil2, deltaTC, env) {
+  const f = (i) => ipc2152AreaMil2(i, deltaTC, env).area - areaMil2;
+  return solve(f, 1e-6, 1e4, true);
+}
+
+export function ipc2152RiseC(currentA, areaMil2, env) {
+  const f = (dt) => ipc2152AreaMil2(currentA, dt, env).area - areaMil2;
+  return solve(f, 0.01, 1000, false);
+}
+
+// ---------- Full calculation ----------
 /**
- * Full trace-width calculation used by the UI.
- *
  * @param {object} p
- * @param {'ipc2221'|'ipc2152'} p.standard
- * @param {1|2|3} p.pcbClass
- * @param {boolean} p.isExternal
- * @param {number} p.currentA
- * @param {number} p.deltaTC          temperature rise (°C)
- * @param {number} p.thicknessMil     copper thickness (mil)
- * @param {number} [p.ambientC]       ambient temperature (°C), for DC analysis
- * @param {number} [p.lengthM]        trace length (m), for DC analysis
- * @param {object} [p.env]            IPC-2152 environment
+ * @param {'ipc2152'|'ipc2221'} p.standard
+ * @param {'width'|'current'|'rise'} p.mode
+ * @param {boolean} p.isExternal          (IPC-2221 only)
+ * @param {number} p.thicknessMil         copper thickness
+ * @param {number} [p.currentA]           modes width / rise
+ * @param {number} [p.deltaTC]            modes width / current
+ * @param {number} [p.widthMil]           modes current / rise
+ * @param {number} [p.marginPct]          current design margin (%)
+ * @param {number} [p.minWidthMil]        fabricator minimum width
+ * @param {number} [p.boardMm]            IPC-2152 board thickness
+ * @param {number} [p.planeMm]            IPC-2152 distance to plane (0/NaN = no plane)
+ * @param {number} [p.ambientC]           DC analysis
+ * @param {number} [p.lengthM]            DC analysis
  */
 export function calculateTraceWidth(p) {
+  const mode = p.mode ?? 'width';
   const errors = [];
-  if (!(p.currentA > 0)) errors.push('current');
-  if (!(p.deltaTC > 0)) errors.push('tempRise');
   if (!(p.thicknessMil > 0)) errors.push('thickness');
+  if (mode !== 'current' && !(p.currentA > 0)) errors.push('current');
+  if (mode !== 'rise' && !(p.deltaTC > 0)) errors.push('tempRise');
+  if (mode !== 'width' && !(p.widthMil > 0)) errors.push('width');
   if (errors.length) return { ok: false, errors };
 
-  const copperOz = p.thicknessMil / MIL_PER_OZ;
-  const pcbClass = CLASS_MIN_WIDTH_MIL[p.pcbClass] ? p.pcbClass : 2;
+  const t = p.thicknessMil;
+  const copperOz = t / MIL_PER_OZ;
+  const margin = 1 + (p.marginPct > 0 ? p.marginPct / 100 : 0);
+  const is2152 = p.standard !== 'ipc2221';
+  const env = { copperOz, boardMm: p.boardMm, planeMm: p.planeMm };
   const warnings = [];
 
-  let calcWidthMil;
-  let factors = null;
-  let margin = 1;
-  if (p.standard === 'ipc2152') {
-    const r = ipc2152WidthMil(p.currentA, p.deltaTC, copperOz, p.isExternal, p.env);
-    factors = r.factors;
-    margin = CLASS_MARGIN[pcbClass];
-    calcWidthMil = r.widthMil;
+  const areaFor = (i, dt) => (is2152 ? ipc2152AreaMil2(i, dt, env).area : ipc2221AreaMil2(i, dt, p.isExternal));
+  const currentFor = (a, dt) => (is2152 ? ipc2152CurrentA(a, dt, env) : ipc2221CurrentA(a, dt, p.isExternal));
+  const riseFor = (i, a) => (is2152 ? ipc2152RiseC(i, a, env) : ipc2221RiseC(i, a, p.isExternal));
 
-    const env = { ...DEFAULT_ENV, ...p.env };
-    if (copperOz < THICKNESS_TABLE_RANGE_OZ[0] || copperOz > THICKNESS_TABLE_RANGE_OZ[1])
-      warnings.push('thicknessOutOfTable');
-    if (env.dutyCycle < DUTY_RANGE[0]) warnings.push('dutyOutOfTable');
-    if (env.dutyCycle < 1 && (env.frequencyHz < FREQ_RANGE_HZ[0] || env.frequencyHz > FREQ_RANGE_HZ[1]))
-      warnings.push('freqOutOfTable');
-    if (env.planeAreaMm2 > PLANE_AREA_RANGE_MM2[1]) warnings.push('planeOutOfTable');
+  let widthMil;
+  let currentA;
+  let deltaTC;
+  let calcWidthMil = null;
+  if (mode === 'width') {
+    currentA = p.currentA;
+    deltaTC = p.deltaTC;
+    calcWidthMil = areaFor(currentA * margin, deltaTC) / t;
+    widthMil = calcWidthMil;
+    if (p.minWidthMil > 0 && widthMil < p.minWidthMil) {
+      widthMil = p.minWidthMil;
+      warnings.push('minWidthApplied');
+    }
+  } else if (mode === 'current') {
+    widthMil = p.widthMil;
+    deltaTC = p.deltaTC;
+    currentA = currentFor(widthMil * t, deltaTC) / margin;
   } else {
-    calcWidthMil = ipc2221WidthMil(p.currentA, p.deltaTC, p.thicknessMil, p.isExternal);
-    // Validity range of the IPC-2221 (ex IPC-D-275) charts.
-    const maxI = p.isExternal ? 35 : 17.5;
-    if (p.currentA > maxI) warnings.push('ipc2221CurrentRange');
-    if (p.deltaTC < 10 || p.deltaTC > 100) warnings.push('ipc2221TempRange');
-    if (copperOz < 0.5 || copperOz > 3) warnings.push('ipc2221ThicknessRange');
+    widthMil = p.widthMil;
+    currentA = p.currentA;
+    deltaTC = riseFor(currentA * margin, widthMil * t);
   }
+  const areaMil2 = widthMil * t;
 
-  const marginWidthMil = calcWidthMil * margin;
-  const classMinMil = CLASS_MIN_WIDTH_MIL[pcbClass];
-  const widthMil = Math.max(marginWidthMil, classMinMil);
-  if (widthMil > marginWidthMil) warnings.push('classMinimumApplied');
-  if (p.standard !== 'ipc2152' && widthMil > 400) warnings.push('ipc2221WidthRange');
+  // Validity ranges
+  if (is2152) {
+    if (currentA * margin > 26) warnings.push('ipc2152CurrentRange');
+    if (deltaTC < 2 || deltaTC > 100) warnings.push('ipc2152TempRange');
+    if (copperOz < 0.45 || copperOz > 3.1) warnings.push('ipc2152CopperRange');
+    if (p.boardMm > 0 && (p.boardMm < 0.72 || p.boardMm > 2.36)) warnings.push('ipc2152BoardRange');
+    if (p.planeMm > 0 && (p.planeMm < 0.14 || p.planeMm > 2.4)) warnings.push('ipc2152PlaneRange');
+  } else {
+    if (currentA * margin > 35) warnings.push('ipc2221CurrentRange');
+    if (deltaTC < 10 || deltaTC > 100) warnings.push('ipc2221TempRange');
+    if (copperOz < 0.45 || copperOz > 3.1) warnings.push('ipc2221ThicknessRange');
+    if (widthMil > 400) warnings.push('ipc2221WidthRange');
+    if ((p.boardMm > 0 && p.boardMm <= 0.8) || t * 25.4 >= 108) warnings.push('ipc2221ExtraDerate');
+  }
 
   const result = {
     ok: true,
-    standard: p.standard,
+    standard: is2152 ? 'ipc2152' : 'ipc2221',
+    mode,
     widthMil,
     widthMm: widthMil * MM_PER_MIL,
     calcWidthMil,
-    marginWidthMil,
-    margin,
-    classMinMil,
-    areaMil2: widthMil * p.thicknessMil,
+    currentA,
+    deltaTC,
+    areaMil2,
     copperOz,
-    factors,
+    margin,
     warnings,
+    ipc2152: null,
+    compare: null,
     dc: null,
+  };
+
+  if (is2152) {
+    const r = ipc2152AreaMil2(currentA * margin, deltaTC, env);
+    result.ipc2152 = { baseArea: r.base, mods: r.mods };
+  }
+  // Same current and rise under the other method(s), for comparison.
+  result.compare = {
+    ipc2152: ipc2152AreaMil2(currentA * margin, deltaTC, env).area / t,
+    ipc2221Ext: ipc2221AreaMil2(currentA * margin, deltaTC, true) / t,
+    ipc2221Int: ipc2221AreaMil2(currentA * margin, deltaTC, false) / t,
   };
 
   if (p.lengthM > 0) {
     const ambientC = Number.isFinite(p.ambientC) ? p.ambientC : 25;
-    const conductorC = ambientC + p.deltaTC;
+    const conductorC = ambientC + deltaTC;
     const rho = copperResistivity(conductorC);
-    const area = widthMil * M_PER_MIL * (p.thicknessMil * M_PER_MIL);
+    const area = widthMil * M_PER_MIL * (t * M_PER_MIL);
     const r = (rho * p.lengthM) / area;
     result.dc = {
       conductorC,
-      resistivity: rho,
       resistanceOhm: r,
-      voltageDropV: p.currentA * r,
-      powerLossW: p.currentA * p.currentA * r,
+      voltageDropV: currentA * r,
+      powerLossW: currentA * currentA * r,
     };
   }
   return result;

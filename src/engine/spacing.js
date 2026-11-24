@@ -1,6 +1,5 @@
-// Minimum electrical conductor spacing — IPC-2221, Table 6-1.
-//
-// Voltage is the DC or AC-peak voltage between conductors.
+// Minimum electrical conductor spacing — IPC-2221B, Table 6-1.
+// Voltage = DC or AC-peak voltage between the two conductors.
 
 export const CATEGORIES = ['B1', 'B2', 'B3', 'B4', 'A5', 'A6', 'A7'];
 
@@ -18,10 +17,11 @@ const TABLE = [
   [500, [0.25, 2.5, 12.5, 0.8, 0.8, 1.5, 0.8]],
 ];
 
-// Above 500 V: mm per volt.
+// Above 500 V: mm per volt over 500 V, added to the 301–500 V row
+// (IPC-2221 §6.3; e.g. B1 at 600 V = 0.25 + 100 × 0.0025 = 0.50 mm).
 const PER_VOLT_OVER_500 = [0.0025, 0.005, 0.025, 0.00305, 0.00305, 0.00305, 0.00305];
+const AT_500 = TABLE[TABLE.length - 1][1];
 
-/** Voltage bands for display: [{ from, to, valuesMm }] */
 export const BANDS = TABLE.map(([to, valuesMm], i) => ({
   from: i === 0 ? 0 : TABLE[i - 1][0],
   to,
@@ -29,23 +29,37 @@ export const BANDS = TABLE.map(([to, valuesMm], i) => ({
 }));
 export const PER_VOLT = PER_VOLT_OVER_500;
 
-/**
- * Minimum spacing in mm. Voltages between the integer band limits of the
- * printed table (e.g. 15.5 V) belong to the next band up.
- */
-export function minimumSpacingMm(voltage, category) {
+function idxOf(category) {
   const idx = CATEGORIES.indexOf(category);
   if (idx < 0) throw new Error(`Unknown category: ${category}`);
-  const v = Math.abs(voltage);
-  if (!(v > 0)) return 0;
-  if (v > 500) return PER_VOLT_OVER_500[idx] * v;
-  for (const [to, values] of TABLE) {
-    if (v <= to) return values[idx];
-  }
-  return TABLE[TABLE.length - 1][1][idx];
+  return idx;
 }
 
-/** Index of the table row used for `voltage` (−1 when above 500 V or ≤ 0). */
+/**
+ * Minimum spacing in mm. Voltages between the integer limits of the printed
+ * bands (e.g. 15.5 V) belong to the next band up (conservative reading).
+ */
+export function minimumSpacingMm(voltage, category) {
+  const idx = idxOf(category);
+  const v = Math.abs(voltage);
+  if (!(v > 0)) return 0;
+  // Above 500 V: the 301–500 V value plus the per-volt coefficient for each volt over 500.
+  if (v > 500) return AT_500[idx] + PER_VOLT_OVER_500[idx] * (v - 500);
+  for (const [to, values] of TABLE) if (v <= to) return values[idx];
+  return AT_500[idx];
+}
+
+/** Highest voltage (V) allowed for a given spacing (mm); 0 if below the first row. */
+export function maxVoltageForSpacing(spacingMm, category) {
+  const idx = idxOf(category);
+  if (!(spacingMm > 0)) return 0;
+  if (spacingMm > AT_500[idx]) return 500 + (spacingMm - AT_500[idx]) / PER_VOLT_OVER_500[idx];
+  let vmax = 0;
+  for (const [to, values] of TABLE) if (values[idx] <= spacingMm + 1e-12) vmax = to;
+  return vmax;
+}
+
+/** Index of the table row used for `voltage` (−1 above 500 V or ≤ 0). */
 export function bandIndex(voltage) {
   const v = Math.abs(voltage);
   if (!(v > 0) || v > 500) return -1;

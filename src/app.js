@@ -1,24 +1,17 @@
-// App shell: hash router, navigation, language and theme switching.
+// App shell: hash router with lazy-loaded pages, sidebar, palette, preferences.
 
-import { t, getLang, setLang, onLangChange } from './i18n.js';
+import { t, getLang, setLang, onLangChange, registerStrings } from './i18n.js';
+import { TOOLS, CATEGORIES, toolById, titleKey, descKey } from './registry.js';
 import { mountCalculator } from './ui/calculator.js';
-import { mountHome } from './pages/home.js';
-import { tracePage } from './pages/trace.js';
-import { impedancePage } from './pages/impedance.js';
-import { spacingPage } from './pages/spacing.js';
-import { viaPage } from './pages/via.js';
-
-const PAGES = { trace: tracePage, impedance: impedancePage, spacing: spacingPage, via: viaPage };
-const NAV = [
-  ['', 'navHome'],
-  ['trace', 'navTrace'],
-  ['impedance', 'navImpedance'],
-  ['spacing', 'navSpacing'],
-  ['via', 'navVia'],
-];
+import { openPalette, initPaletteShortcuts } from './ui/palette.js';
+import { icon } from './ui/icons.js';
+import { esc } from './ui/format.js';
+import { getPref, setPref, pushRecent, onPrefChange } from './prefs.js';
 
 const main = document.getElementById('main');
-const nav = document.getElementById('nav');
+const sidebar = document.getElementById('sidebar');
+const navEl = document.getElementById('nav');
+const pageCache = new Map();
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -26,30 +19,116 @@ function parseHash() {
   return { id: path, params: new URLSearchParams(query) };
 }
 
+function renderNav(activeId) {
+  navEl.innerHTML = `
+    <a class="nav-home" href="#/"${activeId === '' ? ' aria-current="page"' : ''}>${icon('home', 18)}<span>${esc(t('home'))}</span></a>
+    ${CATEGORIES.map((c) => `
+      <div class="nav-group">
+        <h2 class="nav-cat">${esc(t(c.title))}</h2>
+        ${TOOLS.filter((x) => x.cat === c.id).map((x) => `
+          <a href="#/${x.id}"${x.id === activeId ? ' aria-current="page"' : ''}>${icon(x.icon, 18)}<span>${esc(t(titleKey(x.id)))}</span></a>`).join('')}
+      </div>`).join('')}`;
+}
+
 function renderChrome(activeId) {
-  nav.innerHTML = NAV.map(([id, key]) =>
-    `<a href="#/${id}"${id === activeId ? ' aria-current="page"' : ''}>${t(key)}</a>`).join('');
+  renderNav(activeId);
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
-  const langBtn = document.getElementById('lang-toggle');
-  langBtn.textContent = t('langToggle');
-  langBtn.title = t('langToggleTitle');
-  document.getElementById('theme-toggle').title = t('themeToggleTitle');
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    el.title = t(el.dataset.i18nTitle);
+    el.setAttribute('aria-label', t(el.dataset.i18nTitle));
+  });
+  document.getElementById('lang-toggle').textContent = t('langToggle');
+  const imperial = getPref('units') === 'imperial';
+  document.querySelectorAll('#units-toggle [data-u]').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.u === 'imperial') === imperial)));
 }
 
-// Calculators keep their inputs in the hash via history.replaceState, which
-// does not fire `hashchange`; so every hashchange is real navigation.
-function route(keepScroll = false) {
+function toolCard(x) {
+  return `
+    <a class="card tool" href="#/${x.id}">
+      <span class="tool-icon">${icon(x.icon, 22)}</span>
+      <span class="tool-body">
+        <span class="tool-title">${esc(t(titleKey(x.id)))}</span>
+        <span class="tool-desc">${esc(t(descKey(x.id)))}</span>
+      </span>
+      <span class="tool-go">${icon('right', 18)}</span>
+    </a>`;
+}
+
+function mountHome(root) {
+  const recent = (getPref('recent') || []).map(toolById).filter(Boolean);
+  root.innerHTML = `
+    <section class="home-hero">
+      <h1>${esc(t('homeTitle'))}</h1>
+      <p class="lead">${esc(t('homeLead'))}</p>
+      <button type="button" class="search-big" data-open-palette>
+        ${icon('search', 20)}<span>${esc(t('searchPlaceholder'))}</span><kbd>Ctrl K</kbd>
+      </button>
+    </section>
+    ${recent.length ? `<section class="home-section"><h2>${esc(t('homeRecent'))}</h2><div class="tools">${recent.map(toolCard).join('')}</div></section>` : ''}
+    ${CATEGORIES.map((c) => `
+      <section class="home-section">
+        <h2>${icon(c.icon, 18)} ${esc(t(c.title))}</h2>
+        <div class="tools">${TOOLS.filter((x) => x.cat === c.id).map(toolCard).join('')}</div>
+      </section>`).join('')}`;
+}
+
+let routeToken = 0;
+
+async function route(keepScroll = false) {
   const { id, params } = parseHash();
-  const page = PAGES[id];
-  const activeId = page ? id : '';
-
+  const tool = toolById(id);
+  const activeId = tool ? id : '';
+  const token = ++routeToken;
+  closeDrawer();
   renderChrome(activeId);
-  document.title = page ? `${t(page.title)} · ${t('appName')}` : `${t('appName')} — ${t('tagline')}`;
-  if (page) mountCalculator(main, page, params);
-  else mountHome(main);
-  if (!keepScroll) window.scrollTo(0, 0);
-  if (!keepScroll && page) main.focus({ preventScroll: true });
+
+  if (!tool) {
+    document.title = `${t('appName')} — ${t('tagline')}`;
+    if (id) main.innerHTML = `<p class="msg-empty">${esc(t('notFound'))}</p>`;
+    else mountHome(main);
+  } else {
+    document.title = `${t(titleKey(id))} · ${t('appName')}`;
+    let page = pageCache.get(id);
+    if (!page) {
+      main.setAttribute('aria-busy', 'true');
+      try {
+        const mod = await tool.load();
+        page = mod.default;
+        if (page.strings) registerStrings(page.strings);
+        pageCache.set(id, page);
+      } catch (err) {
+        console.error(err);
+        main.innerHTML = `<p class="msg-empty">${esc(t('loadError'))}</p>`;
+        main.removeAttribute('aria-busy');
+        return;
+      }
+      if (token !== routeToken) return; // navigated away meanwhile
+      main.removeAttribute('aria-busy');
+    }
+    if (page.mount) page.mount(main, params);
+    else mountCalculator(main, page, params);
+    pushRecent(id);
+  }
+  if (!keepScroll) {
+    window.scrollTo(0, 0);
+    if (tool) main.focus({ preventScroll: true });
+  }
 }
+
+// ---- Drawer (mobile sidebar) ----
+const menuBtn = document.getElementById('menu-toggle');
+function closeDrawer() {
+  document.body.classList.remove('drawer-open');
+  menuBtn.setAttribute('aria-expanded', 'false');
+}
+menuBtn.addEventListener('click', () => {
+  const open = !document.body.classList.contains('drawer-open');
+  document.body.classList.toggle('drawer-open', open);
+  menuBtn.setAttribute('aria-expanded', String(open));
+  if (open) sidebar.querySelector('a')?.focus();
+});
+document.getElementById('scrim').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
 // ---- Theme ----
 const THEME_KEY = 'umay.theme';
@@ -58,7 +137,6 @@ function applyTheme(theme) {
   else delete document.documentElement.dataset.theme;
 }
 try { applyTheme(localStorage.getItem(THEME_KEY)); } catch { /* ignore */ }
-
 document.getElementById('theme-toggle').addEventListener('click', () => {
   const current = document.documentElement.dataset.theme
     ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -67,24 +145,34 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
   try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
 });
 
-// ---- Language ----
-document.getElementById('lang-toggle').addEventListener('click', () => {
-  setLang(getLang() === 'tr' ? 'en' : 'tr');
-});
+// ---- Language & units ----
+document.getElementById('lang-toggle').addEventListener('click', () => setLang(getLang() === 'tr' ? 'en' : 'tr'));
 onLangChange(() => route(true));
 document.documentElement.lang = getLang();
 
-// ---- Repository link (derived from the GitHub Pages host when available) ----
+document.getElementById('units-toggle').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-u]');
+  if (b) setPref('units', b.dataset.u);
+});
+onPrefChange((k) => { if (k === 'units') route(true); });
+
+// ---- Search ----
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-open-palette]')) openPalette();
+});
+initPaletteShortcuts();
+
+// ---- Repository link (derived from the GitHub Pages host) ----
 (function repoLink() {
   const a = document.getElementById('repo-link');
   const m = location.hostname.match(/^([^.]+)\.github\.io$/i);
   if (m) {
     const repo = location.pathname.split('/').filter(Boolean)[0];
     a.href = repo ? `https://github.com/${m[1]}/${repo}` : `https://github.com/${m[1]}`;
-  } else if (!a.getAttribute('href')) {
-    a.hidden = true;
   }
 })();
 
+// Every hashchange is real navigation: calculators update the query with
+// history.replaceState, which does not fire hashchange.
 window.addEventListener('hashchange', () => route());
 route();
