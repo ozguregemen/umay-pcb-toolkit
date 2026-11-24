@@ -138,7 +138,10 @@ export default {
       + block('sg_lambda', rows([
         ['frequency', si(r.fHz, 'Hz')],
         ['sg_lambda', lenStr(r.lambdaM)],
+        ['λ / 2', lenStr(r.lambdaM / 2), false, true],
+        ['λ / 4', lenStr(r.lambdaM / 4), false, true],
         ['sg_lambda10', lenStr(r.lambdaM / 10)],
+        ['λ / 20', lenStr(r.lambdaM / 20), false, true],
         r.lambdaFrac !== undefined && ['sg_lambdaFrac', fmt(r.lambdaFrac, 3)],
         ['sg_skin', `${fmt(r.skinM * 1e6, 3)} µm`],
       ]))

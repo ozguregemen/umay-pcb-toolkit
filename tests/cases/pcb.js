@@ -49,6 +49,26 @@ export const cases = [
     ok(calculateTraceWidth(base).compare.ipc2221Int > noPlane, 'IPC-2221 internal is more conservative');
   }],
 
+  ['trace: etch factor, plating and AC resistance', () => {
+    const base = { standard: 'ipc2221', mode: 'width', isExternal: true, currentA: 1, deltaTC: 10, thicknessMil: 1.378 };
+    // 1:1 etch adds the full thickness to the drawn width (trapezoid area = t·(W − t))
+    near(calculateTraceWidth({ ...base, etch: '1:1' }).widthMil, 11.825 + 1.378, 1e-3);
+    near(calculateTraceWidth({ ...base, etch: '2:1' }).widthMil, 11.825 + 0.689, 1e-3);
+    // Plating adds thickness: same area over 1.378 + 0.787 mil
+    near(calculateTraceWidth({ ...base, platingMil: 20 / 25.4 }).widthMil, 16.2948 / (1.378 + 20 / 25.4), 1e-3);
+    const r = calculateTraceWidth({ ...base, lengthM: 0.1, fHz: 1e3 });
+    near(r.dc.acFactor, 1.0082, 1e-3); // δ ≫ t → ≈ 1 + t/(2δ) (δ ≈ 2.1 mm at 1 kHz)
+    const hf = calculateTraceWidth({ ...base, lengthM: 0.1, fHz: 1e9 });
+    ok(hf.dc.acFactor > 15 && hf.dc.acFactor < 19, `HF factor ${hf.dc.acFactor}`); // ≈ t/δ
+    near(calculateTraceWidth(base).currentDensity, 1 / (16.2948 * 6.4516e-4), 1e-3);
+  }],
+
+  ['via: stub quarter-wave resonance', () => {
+    // 1 mm stub in εr 4 → c / (4 · 0.001 · 2) = 37.47 GHz
+    const r = calculateVia({ drillMm: 0.3, lengthMm: 1.6, platingUm: 25, stubMm: 1, er: 4 });
+    near(r.stub.quarterWaveHz, 37.474e9, 1e-4);
+  }],
+
   ['trace: DC analysis at ambient + ΔT', () => {
     const r = calculateTraceWidth({
       standard: 'ipc2221', mode: 'width', isExternal: true, currentA: 1, deltaTC: 10,

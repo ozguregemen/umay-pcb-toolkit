@@ -52,6 +52,14 @@ Bu belge, Umay PCB Toolkit'in hesap mantığının nasıl denetlendiğini, eski 
 | Karışma | Johnson `K/(1 + (D/H)²)` | Elle hesap ve ters çözüm |
 | PDN | Hedef empedans, bulk kapasite, seri RLC kondansatör bankası, düzlem kapasitesi | SRF'de |Z| = ESR, n adet → Z/n |
 | Termal | θ zinciri, LDO kaybı, gerekli θSA | Elle hesap |
+| DC-DC | Buck/boost güç katı (TI SLVA477, SLVA372) | 12→3,3 V ve 5→12 V örnekleri |
+| Yansıma / VSWR | Γ = (ZL − Z0)/(ZL + Z0), RL, VSWR, uyumsuzluk kaybı | 75 Ω / 50 Ω → Γ = 0,2 |
+| RF zayıflatıcı | Pi, T, köprülü T; standart değerlerle düğüm analizi | 10 dB / 50 Ω: Zin = 50 Ω, kayıp 10 dB |
+| Spiral bobin | Mohan 1999 (değiştirilmiş Wheeler ve akım tabakası) | İki yöntem %0,4 içinde |
+| Renk ve SMD kodu | IEC 60062:2016, 3/4 haneli ve EIA-96 | Kod/değer gidiş-dönüşü |
+| Tolerans analizi | En kötü durum ve RSS (duyarlılık katsayıları) | Elle hesap |
+| Gömülü microstrip | IPC-2141 üstel davranışı, c = 0'da Hammerstad–Jensen'e bağlanmış | c = 0 → microstrip, c → ∞ → εr |
+| Kayıp | Pozar dielektrik kaybı, R′/(2Z0) iletken kaybı, Hammerstad pürüzlülük çarpanı | Stripline 1 GHz örneği |
 
 ## 4. Bilinen sınırlamalar
 

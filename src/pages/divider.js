@@ -1,4 +1,4 @@
-import { dividerAnalyse, dividerDesign, feedbackDivider } from '../engine/circuit.js';
+import { dividerAnalyse, dividerDesign, feedbackDivider, dividerTolerance, feedbackTolerance } from '../engine/circuit.js';
 import { TOLERANCE } from '../engine/eseries.js';
 import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
@@ -19,6 +19,15 @@ const strings = {
     dv_rTotal: 'Yaklaşık toplam direnç R1 + R2',
     dv_rTotalInfo: 'Toplam direnç bölücü akımını ve çıkış direncini belirler. Arama, toplamı bu değerin 0,5–2 katı olan çiftlerle sınırlıdır.',
     dv_vref: 'Referans gerilimi Vref (VFB)',
+    dv_tolTitle: 'Tolerans analizi',
+    dv_rtol: 'Direnç toleransı',
+    dv_rtolInfo: 'Her iki direncin toleransı. Seri: E24 genellikle ±%5 veya ±%1, E96 ±%1, hassas dirençler ±%0,1.',
+    dv_vtolIn: 'Giriş gerilimi toleransı',
+    dv_vtolRef: 'Referans gerilimi toleransı',
+    dv_tolRange: 'Çıkış aralığı (en kötü durum)',
+    dv_tolWc: 'En kötü durum sapması',
+    dv_tolRss: 'İstatistiksel sapma (RSS)',
+    dv_tolNote: 'En kötü durum, tüm parçaların aynı anda en olumsuz uçta olduğunu varsayar. RSS, bağımsız hataların karesel toplamıdır ve üretimdeki gerçek dağılıma daha yakındır. Sıcaklık katsayısı ve yaşlanma dahil değildir.',
     dv_vrefInfo: 'Regülatör veri sayfasında verilen geri besleme (FB) pini gerilimi.',
     dv_r2fb: 'R2 (FB → GND)',
     dv_r2fbInfo: 'R1 çıkış ile FB pini arasına, R2 FB ile toprak arasına bağlanır. Pek çok regülatör 10–100 kΩ aralığında R2 önerir; veri sayfasını kontrol edin.',
@@ -71,6 +80,15 @@ const strings = {
     dv_rTotal: 'Approximate total resistance R1 + R2',
     dv_rTotalInfo: 'The total sets the divider current and the output resistance. The search is limited to pairs whose sum is 0.5–2× this value.',
     dv_vref: 'Reference voltage Vref (VFB)',
+    dv_tolTitle: 'Tolerance analysis',
+    dv_rtol: 'Resistor tolerance',
+    dv_rtolInfo: 'Tolerance of both resistors. Typically E24 ±5 % or ±1 %, E96 ±1 %, precision parts ±0.1 %.',
+    dv_vtolIn: 'Input voltage tolerance',
+    dv_vtolRef: 'Reference voltage tolerance',
+    dv_tolRange: 'Output range (worst case)',
+    dv_tolWc: 'Worst-case deviation',
+    dv_tolRss: 'Statistical deviation (RSS)',
+    dv_tolNote: 'Worst case assumes every part sits at its least favourable extreme at once. RSS is the root-sum-square of independent errors and is closer to the real spread in production. Temperature coefficient and ageing are not included.',
     dv_vrefInfo: 'Feedback (FB) pin voltage given in the regulator datasheet.',
     dv_r2fb: 'R2 (FB → GND)',
     dv_r2fbInfo: 'R1 goes from the output to the FB pin, R2 from FB to ground. Many regulators recommend R2 in the 10–100 kΩ range; check the datasheet.',
@@ -252,6 +270,15 @@ export default {
           show: isMode('fb') },
       ],
     },
+    {
+      title: 'dv_tolTitle',
+      show: (v) => v.mode !== 'design',
+      fields: [
+        { key: 'rtol', type: 'number', label: 'dv_rtol', default: 1, units: ['pct'], valid: 'nonneg', max: 20, info: 'dv_rtolInfo',
+          presets: [0.1, 0.5, 1, 5].map((x) => ({ label: `${x} %`, value: x })) },
+        { key: 'vtol', type: 'number', label: (v) => (v.mode === 'fb' ? 'dv_vtolRef' : 'dv_vtolIn'), default: 0, units: ['pct'], valid: 'nonneg', max: 20 },
+      ],
+    },
   ],
 
   compute(v) {
@@ -259,15 +286,25 @@ export default {
       return { mode: 'design', ...dividerDesign({ vin: v.vin, vout: v.vout, rTotal: v.rt, series: v.ser }) };
     }
     if (v.mode === 'fb') {
-      return { mode: 'fb', ...feedbackDivider({ vref: v.vref, vout: v.vout, r2: v.r2fb, series: v.fser }) };
+      const r = feedbackDivider({ vref: v.vref, vout: v.vout, r2: v.r2fb, series: v.fser });
+      if (r.ok) r.tol = feedbackTolerance({ vref: v.vref, r1: r.r1, r2: v.r2fb, rTolPct: v.rtol, vTolPct: v.vtol });
+      return { mode: 'fb', ...r };
     }
-    return { mode: 'analyse', ok: true, ...dividerAnalyse({ vin: v.vin, r1: v.r1, r2: v.r2, rl: v.rl }) };
+    const r = dividerAnalyse({ vin: v.vin, r1: v.r1, r2: v.r2, rl: v.rl });
+    return { mode: 'analyse', ok: true, ...r, tol: dividerTolerance({ vin: v.vin, r1: v.r1, r2: v.r2, rTolPct: v.rtol, vTolPct: v.vtol }) };
   },
 
   render(r, v) {
     if (!r.ok) return invalid(r.errors);
     if (r.mode === 'design') return renderDesign(r, v);
-    if (r.mode === 'fb') return renderFb(r, { ...v, r2: v.r2fb });
-    return renderAnalyse(r);
+    const tol = r.tol && (r.tol.wcPct > 0)
+      ? block('dv_tolTitle', rows([
+        ['dv_tolRange', `${si(r.tol.min, 'V', 5)} … ${si(r.tol.max, 'V', 5)}`],
+        ['dv_tolWc', `±${fmt(r.tol.wcPct, 3)} %`],
+        ['dv_tolRss', `±${fmt(r.tol.rssPct, 3)} %`],
+      ]) + `<p class="note">${esc(t('dv_tolNote'))}</p>`)
+      : '';
+    if (r.mode === 'fb') return renderFb(r, { ...v, r2: v.r2fb }) + tol;
+    return renderAnalyse(r) + tol;
   },
 };

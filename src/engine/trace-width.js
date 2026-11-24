@@ -125,7 +125,11 @@ export function calculateTraceWidth(p) {
   if (mode !== 'width' && !(p.widthMil > 0)) errors.push('width');
   if (errors.length) return { ok: false, errors };
 
-  const t = p.thicknessMil;
+  // Total copper = base foil + plating (outer layers). The etch factor
+  // (thickness : undercut per side) turns the drawn width into a trapezoid:
+  // area = t·(W − u).
+  const t = p.thicknessMil + (p.platingMil > 0 ? p.platingMil : 0);
+  const undercut = p.etch === '1:1' ? t : p.etch === '2:1' ? t / 2 : 0;
   const copperOz = t / MIL_PER_OZ;
   const margin = 1 + (p.marginPct > 0 ? p.marginPct / 100 : 0);
   const is2152 = p.standard !== 'ipc2221';
@@ -143,22 +147,24 @@ export function calculateTraceWidth(p) {
   if (mode === 'width') {
     currentA = p.currentA;
     deltaTC = p.deltaTC;
-    calcWidthMil = areaFor(currentA * margin, deltaTC) / t;
+    calcWidthMil = areaFor(currentA * margin, deltaTC) / t + undercut;
     widthMil = calcWidthMil;
     if (p.minWidthMil > 0 && widthMil < p.minWidthMil) {
       widthMil = p.minWidthMil;
       warnings.push('minWidthApplied');
     }
-  } else if (mode === 'current') {
-    widthMil = p.widthMil;
-    deltaTC = p.deltaTC;
-    currentA = currentFor(widthMil * t, deltaTC) / margin;
   } else {
     widthMil = p.widthMil;
-    currentA = p.currentA;
-    deltaTC = riseFor(currentA * margin, widthMil * t);
+    if (!(widthMil > undercut)) return { ok: false, errors: ['etchWidth'] };
+    if (mode === 'current') {
+      deltaTC = p.deltaTC;
+      currentA = currentFor((widthMil - undercut) * t, deltaTC) / margin;
+    } else {
+      currentA = p.currentA;
+      deltaTC = riseFor(currentA * margin, (widthMil - undercut) * t);
+    }
   }
-  const areaMil2 = widthMil * t;
+  const areaMil2 = (widthMil - undercut) * t;
 
   // Validity ranges
   if (is2152) {
@@ -187,6 +193,9 @@ export function calculateTraceWidth(p) {
     areaMil2,
     copperOz,
     margin,
+    undercutMil: undercut,
+    totalThicknessMil: t,
+    currentDensity: currentA / (areaMil2 * 6.4516e-4), // A/mm²
     warnings,
     ipc2152: null,
     compare: null,
@@ -199,16 +208,16 @@ export function calculateTraceWidth(p) {
   }
   // Same current and rise under the other method(s), for comparison.
   result.compare = {
-    ipc2152: ipc2152AreaMil2(currentA * margin, deltaTC, env).area / t,
-    ipc2221Ext: ipc2221AreaMil2(currentA * margin, deltaTC, true) / t,
-    ipc2221Int: ipc2221AreaMil2(currentA * margin, deltaTC, false) / t,
+    ipc2152: ipc2152AreaMil2(currentA * margin, deltaTC, env).area / t + undercut,
+    ipc2221Ext: ipc2221AreaMil2(currentA * margin, deltaTC, true) / t + undercut,
+    ipc2221Int: ipc2221AreaMil2(currentA * margin, deltaTC, false) / t + undercut,
   };
 
   if (p.lengthM > 0) {
     const ambientC = Number.isFinite(p.ambientC) ? p.ambientC : 25;
     const conductorC = ambientC + deltaTC;
     const rho = copperResistivity(conductorC);
-    const area = widthMil * M_PER_MIL * (t * M_PER_MIL);
+    const area = areaMil2 * M_PER_MIL * M_PER_MIL;
     const r = (rho * p.lengthM) / area;
     result.dc = {
       conductorC,
@@ -216,6 +225,15 @@ export function calculateTraceWidth(p) {
       voltageDropV: currentA * r,
       powerLossW: currentA * currentA * r,
     };
+    if (p.fHz > 0) {
+      // Skin effect for a trace over a plane: current crowds to the surface facing
+      // the plane. R_ac ≈ R_dc · t / (δ·(1 − e^(−t/δ)))  (approximation).
+      const delta = Math.sqrt(rho / (Math.PI * p.fHz * 4e-7 * Math.PI));
+      const tm = t * M_PER_MIL;
+      result.dc.skinUm = delta * 1e6;
+      result.dc.acFactor = tm / (delta * (1 - Math.exp(-tm / delta)));
+      result.dc.acResistanceOhm = r * result.dc.acFactor;
+    }
   }
   return result;
 }

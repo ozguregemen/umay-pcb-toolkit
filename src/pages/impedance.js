@@ -1,6 +1,6 @@
-import { calculateImpedance, isDiff, isStripType } from '../engine/impedance.js';
+import { calculateImpedance, solveWidth, isDiff, isStripType } from '../engine/impedance.js';
 import { toMm, fromMm, thicknessToMil, MM_PER_MIL } from '../engine/units.js';
-import { hero, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { hero, rows, block, formulaBlock, messages, invalid, checks } from '../ui/calculator.js';
 import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -18,6 +18,20 @@ const strings = {
     st_cpwg: 'Topraklı eş düzlemli dalga kılavuzu (CPWG)',
     st_diffMicrostrip: 'Diferansiyel microstrip',
     st_diffStripline: 'Diferansiyel stripline',
+    st_coax: 'Koaksiyel kablo',
+    st_twowire: 'İki telli hat / bükümlü çift',
+    im_d: 'İç iletken çapı (d)',
+    im_D: 'Dış iletkenin iç çapı (D)',
+    im_dWire: 'Tel çapı (d)',
+    im_spacing2: 'Teller arası merkez mesafesi (s)',
+    im_tol: 'Empedans toleransı',
+    im_tolInfo: 'Üretici genellikle kontrollü empedansı ±%10 ile garanti eder (sıkı süreçte ±%5–7). Hedef girildiğinde sonuç bu aralıkta mı diye kontrol edilir; sentez modunda bu aralığı veren genişlik penceresi gösterilir.',
+    im_rough: 'Bakır yüzey pürüzlülüğü (Rq)',
+    im_roughInfo: 'RMS pürüzlülük. Yaklaşık değerler: çok düşük profilli (HVLP) folyo < 0,5 µm, standart elektrodepozit folyo 1–2 µm. Pürüzlülük, deri kalınlığı onunla karşılaştırılabilir olduğunda iletken kaybını en fazla 2 katına çıkarır (Hammerstad modeli).',
+    im_lc: 'Birim uzunluk L ve C',
+    im_wWindow: 'Toleransı sağlayan genişlik aralığı',
+    im_checkTarget: 'Hedef {t} Ω ± %{tol}',
+    im_kRough: 'Pürüzlülük kayıp çarpanı',
     im_target: 'Hedef empedans',
     im_targetDiff: 'Hedef diferansiyel empedans',
     im_w: 'İz genişliği (w)',
@@ -50,7 +64,7 @@ const strings = {
     im_lossT: 'Toplam kayıp',
     im_lossLen: 'Hat boyunca kayıp',
     im_skin: 'Deri kalınlığı',
-    im_note: 'Microstrip: Hammerstad–Jensen (kalınlık düzeltmeli, t = 0 için ~%0,2). Stripline: Wheeler 1978 (~%0,5). Asimetrik stripline: iki simetrik stripline’ın paralel birleşimi. Gömülü microstrip: IPC-2141 etkin εr. CPWG: konformal dönüşüm, sıfır kalınlık. Diferansiyel: National AN-905 kenar kuplajlı yaklaşımları (deneysel, ±%10). İletken kaybı pürüzlülüğü içermez; gerçek kayıp daha yüksektir.',
+    im_note: 'Microstrip: Hammerstad–Jensen (kalınlık düzeltmeli, t = 0 için ~%0,2). Stripline: Wheeler 1978 (~%0,5). Asimetrik stripline: iki simetrik stripline’ın paralel birleşimi. Gömülü microstrip: IPC-2141’in üstel davranışı, c = 0’da microstrip’e eşit olacak şekilde bağlanmıştır. CPWG: konformal dönüşüm, sıfır kalınlık. Diferansiyel: National AN-905 kenar kuplajlı yaklaşımları (deneysel, ±%10). İletken kaybı pürüzlülüğü içermez; gerçek kayıp daha yüksektir.',
     err_width: 'İz genişliği sıfırdan büyük olmalı.',
     err_thickness: 'Kalınlık sıfırdan büyük olmalı.',
     err_height: 'Dielektrik yüksekliği sıfırdan büyük olmalı.',
@@ -81,6 +95,20 @@ const strings = {
     st_cpwg: 'Grounded coplanar waveguide (CPWG)',
     st_diffMicrostrip: 'Differential microstrip',
     st_diffStripline: 'Differential stripline',
+    st_coax: 'Coaxial cable',
+    st_twowire: 'Two-wire line / twisted pair',
+    im_d: 'Inner conductor diameter (d)',
+    im_D: 'Outer conductor inner diameter (D)',
+    im_dWire: 'Wire diameter (d)',
+    im_spacing2: 'Centre-to-centre wire spacing (s)',
+    im_tol: 'Impedance tolerance',
+    im_tolInfo: 'Fabricators usually guarantee controlled impedance to ±10 % (±5–7 % on tight processes). With a target, the result is checked against this window; in synthesis mode the width window that achieves it is shown.',
+    im_rough: 'Copper surface roughness (Rq)',
+    im_roughInfo: 'RMS roughness. Approximate values: hyper-very-low-profile (HVLP) foil < 0.5 µm, standard electrodeposited foil 1–2 µm. Roughness raises conductor loss by up to 2× once the skin depth becomes comparable (Hammerstad model).',
+    im_lc: 'Per-unit-length L and C',
+    im_wWindow: 'Width range within tolerance',
+    im_checkTarget: 'Target {t} Ω ± {tol} %',
+    im_kRough: 'Roughness loss factor',
     im_target: 'Target impedance',
     im_targetDiff: 'Target differential impedance',
     im_w: 'Trace width (w)',
@@ -113,7 +141,7 @@ const strings = {
     im_lossT: 'Total loss',
     im_lossLen: 'Loss over the line',
     im_skin: 'Skin depth',
-    im_note: 'Microstrip: Hammerstad–Jensen with thickness correction (~0.2 % for t = 0). Stripline: Wheeler 1978 (~0.5 %). Asymmetric stripline: parallel combination of two symmetric striplines. Embedded microstrip: IPC-2141 effective εr. CPWG: conformal mapping, zero thickness. Differential: National AN-905 edge-coupled approximations (empirical, ±10 %). Conductor loss excludes roughness; real loss is higher.',
+    im_note: 'Microstrip: Hammerstad–Jensen with thickness correction (~0.2 % for t = 0). Stripline: Wheeler 1978 (~0.5 %). Asymmetric stripline: parallel combination of two symmetric striplines. Embedded microstrip: the IPC-2141 exponential, anchored so that c = 0 equals microstrip. CPWG: conformal mapping, zero thickness. Differential: National AN-905 edge-coupled approximations (empirical, ±10 %). Conductor loss excludes roughness; real loss is higher.',
     err_width: 'Trace width must be greater than zero.',
     err_thickness: 'Thickness must be greater than zero.',
     err_height: 'Dielectric height must be greater than zero.',
@@ -135,8 +163,27 @@ const strings = {
 };
 
 const LEN = ['mm', 'mil', 'um'];
-const hLabel = (v) => (v.st === 'stripline' || v.st === 'diffStripline' ? 'im_b' : v.st === 'asymStripline' ? 'im_h1' : 'im_h');
+const isRound = (v) => v.st === 'coax' || v.st === 'twowire';
+const hLabel = (v) => ({ stripline: 'im_b', diffStripline: 'im_b', asymStripline: 'im_h1', coax: 'im_D', twowire: 'im_spacing2' }[v.st] ?? 'im_h');
+const wLabel = (v) => ({ coax: 'im_d', twowire: 'im_dWire' }[v.st] ?? 'im_w');
 const showS = (v) => isDiff(v.st) || v.st === 'cpwg';
+// Example geometry loaded when the user picks a structure (mm, εr).
+const EXAMPLES = {
+  microstrip: { w: 0.3, h: 0.2, er: 4.3 },
+  embedded: { w: 0.3, h: 0.2, c: 0.1, er: 4.3 },
+  stripline: { w: 0.15, h: 0.5, er: 4.3 },
+  asymStripline: { w: 0.15, h: 0.2, h2: 0.3, er: 4.3 },
+  cpwg: { w: 0.5, s: 0.2, h: 0.4, er: 4.3 },
+  diffMicrostrip: { w: 0.2, s: 0.2, h: 0.2, er: 4.3 },
+  diffStripline: { w: 0.12, s: 0.2, h: 0.5, er: 4.3 },
+  coax: { w: 0.9, h: 2.95, er: 2.25 },
+  twowire: { w: 0.5, h: 1.5, er: 1 },
+};
+// Common interface targets (check the interface specification and your fabricator).
+const TARGETS = [
+  { label: 'RF 50 Ω', value: 50 }, { label: 'Video 75 Ω', value: 75 }, { label: 'PCIe Gen3+ 85 Ω', value: 85 },
+  { label: 'USB 90 Ω', value: 90 }, { label: 'Ethernet / LVDS / HDMI 100 Ω', value: 100 },
+];
 
 const FORMULAS = {
   microstrip: ['u = w/h,  Z01(u) = η0/2π · ln( f(u)/u + √(1 + (2/u)²) )',
@@ -145,18 +192,41 @@ const FORMULAS = {
   stripline: ['Z0 = 30/√εr · ln{ 1 + (4/π)(b−t)/W′ · [ (8/π)(b−t)/W′ + √(((8/π)(b−t)/W′)² + 6.27) ] }',
     'W′ = w + ΔW(t, b)              (Wheeler 1978)'],
   asymStripline: ['Z0 ≈ 2·Zs(2h1+t)·Zs(2h2+t) / (Zs(2h1+t) + Zs(2h2+t))', 'Zs = Wheeler symmetric stripline'],
-  embedded: ['εr′ = εr · (1 − e^(−1.55·(h+t+c)/h))', 'Z0 = Z0,air(microstrip) / √εr′'],
+  embedded: ['εeff(c) = εr − (εr − εeff,ms)·e^(−1.55·c/h)    (IPC-2141 decay, anchored at c = 0)', 'Z0 = Z0,ms · √(εeff,ms / εeff(c))'],
   cpwg: ['k = w/(w+2s),  k1 = tanh(πw/4h) / tanh(π(w+2s)/4h)',
     'εeff = (1 + εr·K(k′)K(k1)/(K(k)K(k1′))) / (1 + K(k′)K(k1)/(K(k)K(k1′)))',
     'Z0 = 60π/√εeff · 1 / ( K(k)/K(k′) + K(k1)/K(k1′) )'],
   diffMicrostrip: ['Z0 : Hammerstad–Jensen microstrip', 'Zdiff = 2·Z0·(1 − 0.48·e^(−0.96·s/h))'],
   diffStripline: ['Z0 : Wheeler stripline', 'Zdiff = 2·Z0·(1 − 0.374·e^(−2.9·s/b))'],
+  coax: ['Z0 = 60/√εr · ln(D/d)'],
+  twowire: ['Z0 = 120/√εr · acosh(s/d)'],
 };
-const COMMON = ['t_pd = √εeff / c', 'α_d = k0·εr(εeff−1)·tanδ / (2√εeff(εr−1))  [Np/m]', 'α_c ≈ Rs / (Z0·w),  Rs = √(π f µ0 ρ)'];
+const COMMON = [
+  't_pd = √εeff / c,   L′ = Z0·√εeff / c,   C′ = √εeff / (c·Z0)',
+  'α_d = k0·εr(εeff−1)·tanδ / (2√εeff(εr−1))  [Np/m]',
+  'α_c = R′/(2·Z0),  Rs = √(π f µ0 ρ),  K_rough = 1 + (2/π)·atan(1.4·(Δ/δ)²)',
+];
+
+function roundDiagram(st) {
+  if (st === 'coax') {
+    return `<svg class="diagram" viewBox="0 0 380 112" role="img" aria-label="coax">
+      <circle cx="190" cy="56" r="48" fill="var(--cu)"/><circle cx="190" cy="56" r="42" class="diel"/>
+      <circle cx="190" cy="56" r="11" fill="var(--cu)"/>
+      <path class="dim" d="M179 56h22"/><text x="190" y="50">d</text>
+      <path class="dim" d="M148 92h84"/><text x="190" y="108">D</text>
+    </svg>`;
+  }
+  return `<svg class="diagram" viewBox="0 0 380 112" role="img" aria-label="two-wire">
+    <circle cx="150" cy="56" r="14" fill="var(--cu)"/><circle cx="230" cy="56" r="14" fill="var(--cu)"/>
+    <path class="dim" d="M150 86h80"/><text x="190" y="100">s</text>
+    <path class="dim" d="M136 34h28"/><text x="150" y="28">d</text>
+  </svg>`;
+}
 
 /** Cross-section sketch (not to scale). */
 function diagram(v) {
   const st = v.st;
+  if (st === 'coax' || st === 'twowire') return roundDiagram(st);
   const diff = isDiff(st);
   const planesTwo = isStripType(st);
   const asym = st === 'asymStripline';
@@ -201,6 +271,7 @@ const lenOut = (mm) => (isImperial()
   ? `${fixed(fromMm(mm, 'mil'), 2)} <span class="u">mil</span>`
   : `${fixed(mm, 4)} <span class="u">mm</span>`);
 const lenSub = (mm) => (isImperial() ? `${fixed(mm, 4)} mm` : `${fixed(fromMm(mm, 'mil'), 2)} mil`);
+const lenMain = (mm) => (isImperial() ? `${fixed(fromMm(mm, 'mil'), 2)} mil` : `${fixed(mm, 4)} mm`);
 
 export default {
   id: 'impedance',
@@ -212,19 +283,20 @@ export default {
         { key: 'mode', type: 'choice', label: 'mode', default: 'analyze',
           options: [{ value: 'analyze', label: 'im_modeAnalyze' }, { value: 'synth', label: 'im_modeSynth' }] },
         { key: 'st', type: 'select', label: 'im_structure', default: 'microstrip', info: 'im_structureInfo',
-          options: ['microstrip', 'embedded', 'stripline', 'asymStripline', 'cpwg', 'diffMicrostrip', 'diffStripline']
-            .map((k) => ({ value: k, label: `st_${k}` })) },
+          options: Object.entries(EXAMPLES).map(([k, set]) => ({ value: k, label: `st_${k}`, set })) },
         { key: 'Z', type: 'number', label: (v) => (isDiff(v.st) ? 'im_targetDiff' : 'im_target'), default: 50, units: ['ohm'],
-          show: (v) => v.mode === 'synth',
-          presets: [50, 75, 85, 90, 100].map((x) => ({ label: `${x} Ω`, value: x })) },
+          show: (v) => v.mode === 'synth', presets: TARGETS },
+        { key: 'tz', type: 'number', label: (v) => (isDiff(v.st) ? 'im_targetDiff' : 'im_target'), default: '', optional: true, units: ['ohm'],
+          show: (v) => v.mode !== 'synth', presets: TARGETS },
+        { key: 'tol', type: 'number', label: 'im_tol', default: 10, units: ['pct'], max: 50, info: 'im_tolInfo' },
       ],
     },
     {
       title: 'sectionInputs',
       fields: [
-        { key: 'w', type: 'number', label: 'im_w', default: 0.3, units: LEN, pref: 'length', show: (v) => v.mode !== 'synth' },
+        { key: 'w', type: 'number', label: wLabel, default: 0.3, units: LEN, pref: 'length', show: (v) => v.mode !== 'synth' },
         { key: 's', type: 'number', label: (v) => (v.st === 'cpwg' ? 'im_sGap' : 'im_sPair'), default: 0.2, units: LEN, pref: 'length', show: showS },
-        { key: 't', type: 'number', label: 'im_t', default: 35, units: ['um', 'oz', 'mil', 'mm'],
+        { key: 't', type: 'number', label: 'im_t', default: 35, units: ['um', 'oz', 'mil', 'mm'], show: (v) => !isRound(v),
           presets: [{ label: '½ oz', value: 0.5, unit: 'oz' }, { label: '1 oz', value: 1, unit: 'oz' }, { label: '2 oz', value: 2, unit: 'oz' }] },
         { key: 'h', type: 'number', label: hLabel, default: 0.2, units: LEN, pref: 'length' },
         { key: 'h2', type: 'number', label: 'im_h2', default: 0.3, units: LEN, pref: 'length', show: (v) => v.st === 'asymStripline' },
@@ -243,6 +315,8 @@ export default {
         { key: 'f', type: 'number', label: 'im_f', default: '', optional: true, units: ['GHz', 'MHz'] },
         { key: 'tanD', type: 'number', label: 'im_tanD', default: 0.02, valid: 'nonneg',
           presets: [{ label: 'FR-4 0.02', value: 0.02 }, { label: 'RO4350B 0.0037', value: 0.0037 }, { label: 'RO4003C 0.0027', value: 0.0027 }, { label: 'PTFE 0.0009', value: 0.0009 }] },
+        { key: 'rq', type: 'number', label: 'im_rough', default: 0, units: ['um'], valid: 'nonneg', info: 'im_roughInfo',
+          presets: [{ label: '0', value: 0 }, { label: '0.5', value: 0.5 }, { label: '1', value: 1 }, { label: '2', value: 2 }] },
         { key: 'len', type: 'number', label: 'im_len', default: '', optional: true, units: ['mm', 'cm', 'in', 'mil'] },
       ],
     },
@@ -254,11 +328,25 @@ export default {
     const mm = (k) => (Number.isFinite(v[k]) ? toMm(v[k], u[k]) : NaN);
     const tMm = Number.isFinite(v.t) ? thicknessToMil(v.t, u.t) * MM_PER_MIL : NaN;
     const fHz = Number.isFinite(v.f) ? v.f * (u.f === 'GHz' ? 1e9 : 1e6) : 0;
-    return calculateImpedance({
+    const p = {
       structure: v.st, mode: v.mode, target: v.Z,
-      w: mm('w'), t: tMm, h: mm('h'), h2: mm('h2'), c: mm('c'), s: mm('s'), er: v.er,
-      fHz, tanD: v.tanD, lengthMm: Number.isFinite(v.len) ? toMm(v.len, u.len) : 0,
-    });
+      w: mm('w'), t: isRound(v) ? NaN : tMm, h: mm('h'), h2: mm('h2'), c: mm('c'), s: mm('s'), er: v.er,
+      fHz, tanD: v.tanD, roughUm: v.rq, lengthMm: Number.isFinite(v.len) ? toMm(v.len, u.len) : 0,
+    };
+    const r = calculateImpedance(p);
+    if (!r.ok) return r;
+    const tol = (v.tol || 0) / 100;
+    const target = v.mode === 'synth' ? v.Z : v.tz;
+    if (target > 0) {
+      const z = r.zdiff ?? r.z0;
+      r.check = { target, tol, z, pass: Math.abs(z - target) <= target * tol + 1e-9 };
+      if (v.mode === 'synth' && tol > 0) {
+        // Width window that keeps Z within ±tol (Z falls as w grows).
+        r.wMin = solveWidth(p, target * (1 + tol));
+        r.wMax = solveWidth(p, target * (1 - tol));
+      }
+    }
+    return r;
   },
 
   render(r, v) {
@@ -281,8 +369,14 @@ export default {
       r.ipc && ['im_ipc', `${fixed(r.ipc, 2)} Ω${ipcDiff}`],
       ['im_delay', `${fmt(r.delayPsPerMm, 4)} ps/mm · ${fmt(r.delayPsPerIn, 4)} ps/in`],
       ['im_vel', `${fixed(r.velocityFrac * 100, 1)} % c`],
+      ['im_lc', `${fmt(r.lNhPerMm, 4)} nH/mm · ${fmt(r.cPfPerMm, 4)} pF/mm`],
+      r.wMin > 0 && r.wMax > 0 && ['im_wWindow', `${lenMain(r.wMin)} … ${lenMain(r.wMax)}`],
       r.totalDelayPs && ['im_totalDelay', `${fmt(r.totalDelayPs, 4)} ps`],
     ]);
+    const chk = r.check
+      ? checks([[r.check.pass, esc(t('im_checkTarget', { t: fmt(r.check.target), tol: fmt(r.check.tol * 100) })),
+        `${fixed(r.check.z, 1)} Ω · ${fixed(((r.check.z - r.check.target) / r.check.target) * 100, 1)} %`]])
+      : '';
     let loss = '';
     if (r.loss) {
       const L = r.totalDelayPs ? r.totalDelayPs / r.delayPsPerMm : 0;
@@ -292,9 +386,10 @@ export default {
         ['im_lossT', `${fmt(r.loss.totalDbPerMm * 25.4, 3)} dB/in`, true],
         L > 0 && ['im_lossLen', `${fmt(r.loss.totalDbPerMm * L, 3)} dB`],
         ['im_skin', `${fmt(r.loss.skinUm, 3)} µm`],
+        r.loss.kRough > 1 && ['im_kRough', `×${fixed(r.loss.kRough, 3)}`],
       ]));
     }
-    return main + messages('warn', r.warnings) + block('results', details) + loss
+    return main + chk + messages('warn', r.warnings) + block('results', details) + loss
       + formulaBlock([...FORMULAS[r.structure], ...COMMON], 'im_note', [
         'Hammerstad & Jensen, IEEE MTT-S 1980', 'Wheeler, IEEE T-MTT 1978', 'Wadell, Transmission Line Design Handbook', 'IPC-2141A', 'J. Mears, National AN-905 (1996)']);
   },

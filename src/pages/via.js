@@ -35,6 +35,10 @@ const strings = {
     vi_C: 'Kapasite',
     vi_Z: 'Via empedansı √(L/C)',
     vi_tr: 'Yükselme süresine ek (10–90 %)',
+    vi_res: 'LC rezonans frekansı',
+    vi_stub: 'Kullanılmayan via saplaması (stub) uzunluğu',
+    vi_stubInfo: 'Sinyalin kullandığı son katmandan sonra kalan via gövdesi. Çeyrek dalga boyunda rezonansa girer ve o frekans civarında sinyali zayıflatır. Arka delme (back-drill) veya kör via ile kısaltılır.',
+    vi_stubRes: 'Saplama rezonansı (λ/4)',
     vi_note: 'Akım kapasitesi, gövde kesiti IPC-2221 dış katman eğrisine uygulanarak tahmin edilir; kart ısıyı yaydığı için bu yaygın kullanılan muhafazakâr bir yaklaşımdır. Paralel vialarda akımın eşit paylaşıldığı varsayılır; gerçekte kaynağa yakın vialar daha fazla akım taşır. Parazitik formüller H. Johnson’dan; L inç cinsinden h ve d ile, C pad/antipad geometrisiyle.',
     err_drill: 'Delik çapı sıfırdan büyük olmalı.',
     err_length: 'Via uzunluğu sıfırdan büyük olmalı.',
@@ -76,6 +80,10 @@ const strings = {
     vi_C: 'Capacitance',
     vi_Z: 'Via impedance √(L/C)',
     vi_tr: 'Added rise time (10–90 %)',
+    vi_res: 'LC resonant frequency',
+    vi_stub: 'Unused via stub length',
+    vi_stubInfo: 'The via barrel left beyond the last layer the signal uses. It resonates at a quarter wavelength and attenuates the signal around that frequency. Back-drilling or blind vias shorten it.',
+    vi_stubRes: 'Stub resonance (λ/4)',
     vi_note: 'Current capacity applies the IPC-2221 external curve to the barrel cross-section; since the board spreads heat, this is a commonly used conservative estimate. Parallel vias are assumed to share current equally; in practice vias nearest the source carry more. Parasitic formulas are from H. Johnson; L uses h and d in inches, C the pad/antipad geometry.',
     err_drill: 'Drill diameter must be greater than zero.',
     err_length: 'Via length must be greater than zero.',
@@ -140,6 +148,7 @@ export default {
         { key: 'ap', type: 'number', label: 'vi_antipad', default: 1.0, units: LEN, pref: 'length' },
         { key: 'er', type: 'number', label: 'vi_er', default: 4.3, min: 1 },
         { key: 'z0', type: 'number', label: 'vi_z0', default: 50, units: ['ohm'] },
+        { key: 'stub', type: 'number', label: 'vi_stub', default: '', optional: true, units: LEN, info: 'vi_stubInfo' },
       ],
     },
   ],
@@ -160,6 +169,7 @@ export default {
       antipadMm: mm('ap'),
       er: v.er,
       z0: v.z0,
+      stubMm: mm('stub'),
     });
   },
 
@@ -187,6 +197,8 @@ export default {
       r.parasitics && ['vi_C', `${fmt(r.parasitics.capacitancePf, 3)} pF`],
       r.parasitics && ['vi_Z', `${fmt(r.parasitics.impedanceOhm, 3)} Ω`],
       r.parasitics && ['vi_tr', `${fmt(r.parasitics.riseDegradationPs, 3)} ps`],
+      r.parasitics && ['vi_res', si(r.parasitics.resonanceHz, 'Hz')],
+      r.stub && ['vi_stubRes', si(r.stub.quarterWaveHz, 'Hz')],
     ]));
     return main + messages('warn', r.warnings) + block('results', dc) + hf
       + formulaBlock([
@@ -196,7 +208,8 @@ export default {
         'I_max = 0.048 · ΔT^0.44 · A_mil²^0.725   (IPC-2221, per via)',
         'L = 5.08·h·[ln(4h/d) + 1]  nH     (h, d in inches)',
         'C = 1.41·εr·T·D1 / (D2 − D1)  pF  (inches)',
-        'T10–90 = 2.2 · C · Z0/2',
+        'T10–90 = 2.2 · C · Z0/2,   f_LC = 1 / (2π√(L·C))',
+        'f_stub = c / (4 · L_stub · √εr)',
       ], 'vi_note', ['IPC-2221B', 'IPC-6012', 'H. Johnson & M. Graham, High-Speed Digital Design §7']);
   },
 };

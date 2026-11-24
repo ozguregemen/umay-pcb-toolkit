@@ -55,6 +55,10 @@ export const cases = [
   ['impedance: embedded microstrip lies between microstrip and stripline-like εr', () => {
     const r = embeddedMicrostrip(0.3, 0.035, 0.2, 0.1, 4.3);
     ok(r.erEff > microstrip(0.3, 0.035, 0.2, 4.3).erEff && r.erEff < 4.3, `εr′ ${r.erEff}`);
+    // Continuity: no cover = plain microstrip; very thick cover → εr
+    const ms = microstrip(0.3, 0.035, 0.2, 4.3);
+    near(embeddedMicrostrip(0.3, 0.035, 0.2, 0, 4.3).z0, ms.z0, 1e-12);
+    near(embeddedMicrostrip(0.3, 0.035, 0.2, 5, 4.3).erEff, 4.3, 1e-6);
   }],
 
   ['impedance: IPC-2141 comparison formulas unchanged', () => {

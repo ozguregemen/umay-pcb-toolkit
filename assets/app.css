@@ -417,3 +417,72 @@ select.unit { cursor: pointer; }
 .ref .grid.left td, .ref .grid.left th { white-space: normal; vertical-align: top; min-width: 120px; }
 .ref .grid th small { display: block; color: var(--faint); font-weight: 400; }
 .ref .note .icon { display: inline-block; vertical-align: -2px; }
+
+/* ---------- Learning path ---------- */
+.related { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.related .icon { color: var(--accent); }
+.learn-banner { display: flex; gap: 14px; align-items: center; padding: 16px 18px; margin-top: 18px; text-decoration: none; color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: linear-gradient(90deg, var(--accent-soft), var(--surface) 70%); }
+.learn-banner .btn { flex: none; }
+@media (max-width: 640px) { .learn-banner { flex-wrap: wrap; } .learn-banner .btn { width: 100%; justify-content: center; } }
+.learn-progress { padding: 16px 18px; margin-bottom: 8px; }
+.lp-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lp-count { font-size: 22px; color: var(--muted); }
+.lp-count b { color: var(--accent-strong); font-size: 30px; }
+.lp-bar { height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); margin-top: 12px; overflow: hidden; }
+.lp-bar span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.lessons { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.lesson-card { display: flex; gap: 14px; align-items: center; padding: 14px 16px; text-decoration: none; color: var(--text); transition: border-color .15s; }
+.lesson-card:hover { border-color: var(--accent); }
+.lesson-num { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+.lesson-card.done .lesson-num { background: var(--ok-bg); border-color: var(--ok-bd); color: var(--ok-fg); }
+.lesson-meta { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12.5px; margin: 4px 0 0; }
+.crumbs { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.crumbs a { color: var(--muted); }
+.lesson-layout { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; align-items: start; }
+@media (max-width: 1100px) { .lesson-layout { grid-template-columns: minmax(0, 1fr); } .toc { display: none; } }
+.toc { position: sticky; top: calc(var(--topbar-h) + 16px); font-size: 13.5px; }
+.toc h2 { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.toc ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--faint); }
+.toc a { color: var(--muted); text-decoration: none; }
+.toc a:hover { color: var(--accent); }
+.lesson { padding: 8px 28px 24px; font-size: 15.5px; line-height: 1.7; max-width: 780px; }
+@media (max-width: 640px) { .lesson { padding: 4px 16px 18px; font-size: 15px; } }
+.lesson h2 { font-size: 20px; margin: 28px 0 8px; scroll-margin-top: calc(var(--topbar-h) + 16px); }
+.lesson h3 { font-size: 16.5px; margin: 20px 0 6px; }
+.lesson p { margin: 10px 0; }
+.lesson ul, .lesson ol { padding-left: 22px; margin: 10px 0; }
+.lesson li { margin: 4px 0; }
+.lesson code { font-family: var(--mono); font-size: .9em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+.lesson .table-scroll { margin: 12px 0; }
+.lesson blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--border-strong); color: var(--muted); }
+.callout { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0; padding: 10px 14px; border-radius: 10px; border: 1px solid; font-size: 14.5px; }
+.callout > .icon { margin-top: 3px; }
+.callout p { margin: 4px 0; }
+.callout.tip { background: color-mix(in srgb, var(--focus) 8%, var(--surface)); border-color: color-mix(in srgb, var(--focus) 35%, var(--border)); }
+.callout.tip > .icon { color: var(--focus); }
+.callout.note-box { background: var(--surface-2); border-color: var(--border); }
+.callout.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-bd); }
+.callout.rule { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-bd); }
+.quiz { margin: 14px 0; border: 1px dashed var(--accent); border-radius: 10px; padding: 10px 14px; background: var(--accent-soft); }
+.quiz summary { cursor: pointer; display: flex; gap: 8px; align-items: flex-start; list-style: none; }
+.quiz summary::-webkit-details-marker { display: none; }
+.quiz summary .icon { margin-top: 4px; color: var(--accent-strong); }
+.quiz[open] summary { margin-bottom: 6px; }
+.quiz-answer { border-top: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); padding-top: 6px; }
+.calc-link { margin: 4px 0; text-decoration: none; height: auto; min-height: 34px; padding: 6px 12px; }
+.fig { margin: 16px 0; }
+.fig figcaption { font-size: 13px; color: var(--muted); text-align: center; margin-top: 6px; }
+.lesson-tools { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 14px; }
+.lesson-tools h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.tool-chip { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; padding: 4px 10px; font-size: 13px; }
+.lesson-done { margin-top: 18px; }
+.lesson-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; max-width: 780px; }
+.lesson-nav a { padding: 12px 16px; text-decoration: none; color: var(--text); display: grid; gap: 2px; }
+.lesson-nav a:hover { border-color: var(--accent); }
+.lesson-nav small { color: var(--muted); }
+.lesson-nav .next { text-align: right; grid-column: 2; }
+.grid.left thead th { text-align: left; }
+a.btn { text-decoration: none; }
+/* Respect explicit SVG text anchors (the generic rule above centres labels). */
+.diagram text[text-anchor="start"] { text-anchor: start; }
+.diagram text[text-anchor="end"] { text-anchor: end; }

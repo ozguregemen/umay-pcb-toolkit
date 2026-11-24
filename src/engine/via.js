@@ -96,8 +96,13 @@ export function calculateVia(p) {
       capacitancePf: cPf,
       impedanceOhm: Math.sqrt((res.inductanceNh * 1e-9) / (cPf * 1e-12)),
       riseDegradationPs: 2.2 * cPf * (z0 / 2), // ps (pF·Ω = ps)
+      resonanceHz: 1 / (2 * Math.PI * Math.sqrt(res.inductanceNh * 1e-9 * cPf * 1e-12)),
       z0,
     };
+  }
+  // Unused via stub (barrel beyond the last connected layer) resonates at a quarter wavelength.
+  if (p.stubMm > 0 && p.er >= 1) {
+    res.stub = { lengthMm: p.stubMm, quarterWaveHz: 299792458 / (4 * (p.stubMm / 1000) * Math.sqrt(p.er)) };
   }
   return res;
 }

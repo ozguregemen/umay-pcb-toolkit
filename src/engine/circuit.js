@@ -295,3 +295,42 @@ export function reactance(f, l, c) {
     f0: l > 0 && c > 0 ? 1 / (TWO_PI * Math.sqrt(l * c)) : NaN,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Tolerance analysis (worst case and root-sum-square)
+// ---------------------------------------------------------------------------
+
+/**
+ * Output spread of a divider Vout = Vin·R2/(R1 + R2) from resistor and source
+ * tolerances. Worst case takes every part at its extreme in the unfavourable
+ * direction; RSS combines the relative sensitivities statistically
+ * (|∂lnV/∂lnR1| = |∂lnV/∂lnR2| = R1/(R1 + R2), ∂lnV/∂lnVin = 1).
+ * @param {{vin:number, r1:number, r2:number, rTolPct:number, vTolPct?:number}} p
+ * @returns {{nom:number, min:number, max:number, wcPct:number, rssPct:number}}
+ */
+export function dividerTolerance({ vin, r1, r2, rTolPct, vTolPct = 0 }) {
+  const a = rTolPct / 100;
+  const b = vTolPct / 100;
+  const f = (vi, x1, x2) => (vi * x2) / (x1 + x2);
+  const nom = f(vin, r1, r2);
+  const max = f(vin * (1 + b), r1 * (1 - a), r2 * (1 + a));
+  const min = f(vin * (1 - b), r1 * (1 + a), r2 * (1 - a));
+  const s = r1 / (r1 + r2);
+  return { nom, min, max, wcPct: (100 * Math.max(max - nom, nom - min)) / nom, rssPct: 100 * Math.sqrt(2 * (s * a) ** 2 + b * b) };
+}
+
+/**
+ * Output spread of a regulator feedback divider Vout = Vref·(1 + R1/R2).
+ * Sensitivities: |∂lnV/∂lnR1| = |∂lnV/∂lnR2| = R1/(R1 + R2), ∂lnV/∂lnVref = 1.
+ * @param {{vref:number, r1:number, r2:number, rTolPct:number, vTolPct?:number}} p
+ */
+export function feedbackTolerance({ vref, r1, r2, rTolPct, vTolPct = 0 }) {
+  const a = rTolPct / 100;
+  const b = vTolPct / 100;
+  const f = (vr, x1, x2) => vr * (1 + x1 / x2);
+  const nom = f(vref, r1, r2);
+  const max = f(vref * (1 + b), r1 * (1 + a), r2 * (1 - a));
+  const min = f(vref * (1 - b), r1 * (1 - a), r2 * (1 + a));
+  const s = r1 / (r1 + r2);
+  return { nom, min, max, wcPct: (100 * Math.max(max - nom, nom - min)) / nom, rssPct: 100 * Math.sqrt(2 * (s * a) ** 2 + b * b) };
+}

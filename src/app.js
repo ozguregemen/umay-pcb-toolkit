@@ -7,6 +7,7 @@ import { openPalette, initPaletteShortcuts } from './ui/palette.js';
 import { icon } from './ui/icons.js';
 import { esc } from './ui/format.js';
 import { getPref, setPref, pushRecent, onPrefChange } from './prefs.js';
+import { mountLearnIndex, mountLesson, lessonsForTool } from './learn/index.js';
 
 const main = document.getElementById('main');
 const sidebar = document.getElementById('sidebar');
@@ -20,8 +21,14 @@ function parseHash() {
 }
 
 function renderNav(activeId) {
+  const cur = (id) => (id === activeId ? ' aria-current="page"' : '');
   navEl.innerHTML = `
-    <a class="nav-home" href="#/"${activeId === '' ? ' aria-current="page"' : ''}>${icon('home', 18)}<span>${esc(t('home'))}</span></a>
+    <a class="nav-home" href="#/"${cur('')}>${icon('home', 18)}<span>${esc(t('home'))}</span></a>
+    <div class="nav-group">
+      <h2 class="nav-cat">${esc(t('catLearn'))}</h2>
+      <a href="#/learn"${cur('learn')}>${icon('book', 18)}<span>${esc(t('learn_title'))}</span></a>
+      <a href="#/learn/glossary"${cur('learn/glossary')}>${icon('info', 18)}<span>${esc(t('lesson_glossary'))}</span></a>
+    </div>
     ${CATEGORIES.map((c) => `
       <div class="nav-group">
         <h2 class="nav-cat">${esc(t(c.title))}</h2>
@@ -64,6 +71,14 @@ function mountHome(root) {
         ${icon('search', 20)}<span>${esc(t('searchPlaceholder'))}</span><kbd>Ctrl K</kbd>
       </button>
     </section>
+    <a class="card learn-banner" href="#/learn">
+      <span class="tool-icon">${icon('book', 22)}</span>
+      <span class="tool-body">
+        <span class="tool-title">${esc(t('learn_homeTitle'))}</span>
+        <span class="tool-desc">${esc(t('learn_homeText'))}</span>
+      </span>
+      <span class="btn">${esc(t('learn_homeCta'))}</span>
+    </a>
     ${recent.length ? `<section class="home-section"><h2>${esc(t('homeRecent'))}</h2><div class="tools">${recent.map(toolCard).join('')}</div></section>` : ''}
     ${CATEGORIES.map((c) => `
       <section class="home-section">
@@ -77,12 +92,21 @@ let routeToken = 0;
 async function route(keepScroll = false) {
   const { id, params } = parseHash();
   const tool = toolById(id);
-  const activeId = tool ? id : '';
+  const isLearn = id === 'learn' || id.startsWith('learn/');
+  let activeId = '';
+  if (tool) activeId = id;
+  else if (isLearn) activeId = id === 'learn/glossary' ? id : 'learn';
   const token = ++routeToken;
   closeDrawer();
   renderChrome(activeId);
 
-  if (!tool) {
+  if (isLearn) {
+    const lessonId = id.slice('learn/'.length);
+    document.title = `${t(lessonId ? `lesson_${lessonId}` : 'learn_title')} · ${t('appName')}`;
+    if (lessonId) await mountLesson(main, lessonId);
+    else mountLearnIndex(main);
+    if (token !== routeToken) return;
+  } else if (!tool) {
     document.title = `${t('appName')} — ${t('tagline')}`;
     if (id) main.innerHTML = `<p class="msg-empty">${esc(t('notFound'))}</p>`;
     else mountHome(main);
@@ -105,13 +129,14 @@ async function route(keepScroll = false) {
       if (token !== routeToken) return; // navigated away meanwhile
       main.removeAttribute('aria-busy');
     }
+    page.related = lessonsForTool(id).map((l) => ({ id: l.id, title: t(`lesson_${l.id}`) }));
     if (page.mount) page.mount(main, params);
     else mountCalculator(main, page, params);
     pushRecent(id);
   }
   if (!keepScroll) {
     window.scrollTo(0, 0);
-    if (tool) main.focus({ preventScroll: true });
+    if (tool || isLearn) main.focus({ preventScroll: true });
   }
 }
 

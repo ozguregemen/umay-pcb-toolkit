@@ -14,6 +14,7 @@ import { icon } from './icons.js';
              hint?, info?, show?(v) }
    choice: { key, type:'choice', label, options:[{ value, label, raw? }], default, info?, show?(v) }
    select: { key, type:'select', label, options:[...], default, info?, show?(v) }
+   text:   { key, type:'text', label, default, hint?, info?, show?(v) }  (raw string, max 40 chars)
  `label` may be a function of the current values (returns an i18n key).
  Sections: { title, fields, show?(v), optional?, collapsible?, note? }
 */
@@ -57,6 +58,8 @@ function initialState(page, params) {
       raw[f.key] = p ?? (f.default === undefined || f.default === null ? '' : String(f.default));
       const u = params.get(`${f.key}_u`);
       units[f.key] = f.units?.includes(u) ? u : defaultUnit(f);
+    } else if (f.type === 'text') {
+      raw[f.key] = (p ?? String(f.default ?? '')).slice(0, 40);
     } else {
       const valid = f.options.some((o) => String(o.value) === p);
       raw[f.key] = valid ? p : String(f.default);
@@ -128,6 +131,18 @@ function renderField(f, state, v) {
           ${unitCtl}
         </div>
         ${presets}${hint}${err}
+      </div>`;
+  }
+  if (f.type === 'text') {
+    return `
+      <div class="field" data-field="${f.key}"${hidden}>
+        <div class="label-row"><label for="${id}">${esc(labelOf(f, v))}</label>${infoButton(id, f)}</div>
+        ${infoPanel(id, f)}
+        <div class="input-group">
+          <input id="${id}" data-key="${f.key}" type="text" autocomplete="off" spellcheck="false" maxlength="40"
+                 value="${esc(state.raw[f.key])}"${hintKey ? ` aria-describedby="${id}-hint"` : ''}>
+        </div>
+        ${hint}
       </div>`;
   }
   if (f.type === 'choice') {
@@ -267,6 +282,8 @@ export function mountCalculator(root, page, params) {
       <div class="page-title">
         <h1>${esc(t(`tool_${page.id}`))}</h1>
         <p class="lead">${esc(t(page.intro ?? `tool_${page.id}_desc`))}</p>
+        ${page.related?.length ? `<p class="related">${icon('book', 15)}<span>${esc(t('learn_related'))}</span> ${page.related
+          .map((l) => `<a href="#/learn/${l.id}">${esc(l.title)}</a>`).join(' · ')}</p>` : ''}
       </div>
       <div class="page-actions" role="toolbar" aria-label="${esc(t('results'))}">
         ${actionButton('copy-link', 'link', 'copyLink', 'copyLinkTitle')}
@@ -341,10 +358,29 @@ export function mountCalculator(root, page, params) {
     syncUrl();
   };
 
+  // An option may carry `set: { key: value }` — example values that make sense
+  // for it (e.g. switching buck → boost). Values are in the field's first unit.
+  const applySet = (key, value) => {
+    const f = fieldsOf(page).find((x) => x.key === key);
+    const o = f?.options?.find((x) => String(x.value) === value);
+    if (!o?.set) return false;
+    for (const [k, val] of Object.entries(o.set)) {
+      const ff = fieldsOf(page).find((x) => x.key === k);
+      if (!ff) continue;
+      state.raw[k] = String(val);
+      if (ff.type === 'number' && ff.units) state.units[k] = ff.unit ?? ff.units[0];
+    }
+    return true;
+  };
+
   form.addEventListener('input', (e) => {
     const el = e.target;
     if (el.dataset.key) state.raw[el.dataset.key] = el.value;
     if (el.dataset.unit) state.units[el.dataset.unit] = el.value;
+    if (el.tagName === 'SELECT' && el.dataset.key && applySet(el.dataset.key, el.value)) {
+      drawForm();
+      form.querySelector(`[data-key="${el.dataset.key}"]`)?.focus();
+    }
     update();
   });
 
@@ -352,11 +388,16 @@ export function mountCalculator(root, page, params) {
     const choice = e.target.closest('[data-choice]');
     if (choice) {
       state.raw[choice.dataset.choice] = choice.dataset.value;
-      choice.parentElement.querySelectorAll('[data-choice]').forEach((b) => {
-        const on = b === choice;
-        b.setAttribute('aria-checked', String(on));
-        b.tabIndex = on ? 0 : -1;
-      });
+      if (applySet(choice.dataset.choice, choice.dataset.value)) {
+        drawForm();
+        form.querySelector(`[data-choice="${choice.dataset.choice}"][data-value="${choice.dataset.value}"]`)?.focus();
+      } else {
+        choice.parentElement.querySelectorAll('[data-choice]').forEach((b) => {
+          const on = b === choice;
+          b.setAttribute('aria-checked', String(on));
+          b.tabIndex = on ? 0 : -1;
+        });
+      }
       update();
       return;
     }

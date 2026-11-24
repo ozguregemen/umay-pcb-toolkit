@@ -5,5 +5,6 @@ import { cases as pcb } from './cases/pcb.js';
 import { cases as si } from './cases/si.js';
 import { cases as power } from './cases/power.js';
 import { cases as circuit } from './cases/circuit.js';
+import { cases as extra } from './cases/extra.js';
 
-export const cases = [...pcb, ...si, ...power, ...circuit];
+export const cases = [...pcb, ...si, ...power, ...circuit, ...extra];

@@ -84,12 +84,17 @@ export function asymStripline(w, t, h1, h2, er) {
   return { z0: (2 * z1 * z2) / (z1 + z2), erEff: er };
 }
 
-/** Embedded (buried) microstrip; c = dielectric cover above the trace top. */
+/**
+ * Embedded (buried) microstrip; c = dielectric cover above the trace top.
+ * IPC-2141 gives εr′ = εr·(1 − e^(−1.55·(h+t+c)/h)), which does not reduce to
+ * plain microstrip at c = 0. We keep its exponential approach to εr but anchor
+ * it at the Hammerstad–Jensen microstrip value:
+ *   εeff(c) = εr − (εr − εeff,ms)·e^(−1.55·c/h),  Z0 = Z0,ms·√(εeff,ms/εeff(c))
+ */
 export function embeddedMicrostrip(w, t, h, c, er) {
-  const H1 = h + t + c;
-  const erp = er * (1 - Math.exp((-1.55 * H1) / h));
-  const erEff = Math.max(1, erp);
-  return { z0: microstrip(w, t, h, 1).z0 / Math.sqrt(erEff), erEff };
+  const ms = microstrip(w, t, h, er);
+  const erEff = er - (er - ms.erEff) * Math.exp((-1.55 * c) / h);
+  return { z0: ms.z0 * Math.sqrt(ms.erEff / erEff), erEff };
 }
 
 /** Grounded coplanar waveguide (zero thickness): centre w, gap s, height h. */
@@ -128,6 +133,10 @@ function line(p) {
       return embeddedMicrostrip(p.w, p.t, p.h, p.c, p.er);
     case 'cpwg':
       return cpwg(p.w, p.s, p.h, p.er);
+    case 'coax': // w = inner conductor diameter d, h = outer conductor inner diameter D
+      return { z0: (60 / Math.sqrt(p.er)) * Math.log(p.h / p.w), erEff: p.er };
+    case 'twowire': // w = wire diameter d, h = centre-to-centre spacing
+      return { z0: (120 / Math.sqrt(p.er)) * Math.acosh(Math.max(1, p.h / p.w)), erEff: p.er };
     default:
       throw new Error(`Unknown structure ${p.structure}`);
   }
@@ -163,7 +172,8 @@ export function solveWidth(p, target) {
 export function calculateImpedance(p) {
   const st = p.structure;
   const errors = [];
-  if (!(p.t >= 0) || (st !== 'cpwg' && !(p.t > 0))) errors.push('thickness');
+  const round = st === 'coax' || st === 'twowire';
+  if (!round && (!(p.t >= 0) || (st !== 'cpwg' && !(p.t > 0)))) errors.push('thickness');
   if (!(p.h > 0)) errors.push('height');
   if (!(p.er >= 1)) errors.push('er');
   if ((isDiff(st) || st === 'cpwg') && !(p.s > 0)) errors.push('spacing');
@@ -224,6 +234,9 @@ export function calculateImpedance(p) {
     delayPsPerMm,
     delayPsPerIn: delayPsPerMm * 25.4,
     velocityFrac: 1 / Math.sqrt(erEff),
+    // Per-unit-length L and C of the single line: L' = Z0·√εeff/c, C' = √εeff/(c·Z0)
+    lNhPerMm: ((z0 * Math.sqrt(erEff)) / C0) * 1e6,
+    cPfPerMm: (Math.sqrt(erEff) / (C0 * z0)) * 1e9,
     warnings,
     loss: null,
   };
@@ -239,16 +252,25 @@ export function calculateImpedance(p) {
     const adNp = homogeneous
       ? (k0 * Math.sqrt(p.er) * tanD) / 2
       : (k0 * p.er * (erEff - 1) * tanD) / (2 * Math.sqrt(erEff) * (p.er - 1));
-    // Conductor loss, smooth copper, uniform-current approximation: Rs / (Z0 · W_eff)
+    // Conductor loss α_c = R′/(2·Z0). Planar lines: uniform-current approximation
+    // R′ = 2·Rs/W (strip + return), stripline returns on both planes → W_eff = 2W.
+    // Coax: R′ = Rs/π·(1/d + 1/D). Two-wire: R′ = 2·Rs/(π·d).
     const Rs = Math.sqrt((Math.PI * p.fHz * MU0 * rho));
-    const wM = (w / 1000) * (isStripType(st) ? 2 : 1);
-    const acNp = Rs / (z0 * wM);
+    const skinM = Math.sqrt(rho / (Math.PI * p.fHz * MU0));
+    // Hammerstad roughness factor: K = 1 + (2/π)·atan(1.4·(Δrms/δ)²)
+    const kRough = p.roughUm > 0 ? 1 + (2 / Math.PI) * Math.atan(1.4 * ((p.roughUm * 1e-6) / skinM) ** 2) : 1;
+    let rPerM;
+    if (st === 'coax') rPerM = (Rs / Math.PI) * (1 / (w / 1000) + 1 / (p.h / 1000));
+    else if (st === 'twowire') rPerM = (2 * Rs) / (Math.PI * (w / 1000));
+    else rPerM = (2 * Rs) / ((w / 1000) * (isStripType(st) ? 2 : 1));
+    const acNp = ((rPerM * kRough) / (2 * z0));
     const toDbPerMm = 8.686 / 1000;
-    const skinUm = Math.sqrt(rho / (Math.PI * p.fHz * MU0)) * 1e6;
+    const skinUm = skinM * 1e6;
     res.loss = {
       dielectricDbPerMm: adNp * toDbPerMm,
       conductorDbPerMm: acNp * toDbPerMm,
       totalDbPerMm: (adNp + acNp) * toDbPerMm,
+      kRough,
       skinUm,
     };
     if (tanD === 0) warnings.push('noTanD');
