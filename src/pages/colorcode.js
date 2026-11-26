@@ -2,7 +2,7 @@ import { decode, encode, decodeSmd, encodeSmd, HEX, DIGIT, MULTIPLIER, TOLERANCE
 import { nearestStandard, decadeValues } from '../engine/eseries.js';
 
 const E96 = decadeValues('E96').map((x) => Math.round(x * 100));
-import { hero, rows, block, steps, invalid } from '../ui/calculator.js';
+import { hero, rows, block, steps, invalid, messages } from '../ui/calculator.js';
 import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
@@ -37,6 +37,7 @@ const strings = {
     cc_smd4: 'SMD 4 haneli kod',
     cc_smdEia: 'EIA-96 kodu',
     cc_jumper: '0 Ω köprü (jumper)',
+    warn_cc_ambiguous: 'Bu kod iki biçimde okunabilir. R ondalık ayırıcıysa {a} (burada gösterilen); EIA-96 koduysa, yani %1 toleranslı küçük bir dirençte çarpan harfi R = ×0,01 ise {b}. Emin değilseniz direnci ölçün.',
     cc_kind_3: '3 haneli kod (genellikle ±%5)',
     cc_kind_4: '4 haneli kod (genellikle ±%1)',
     cc_kind_eia96: 'EIA-96 kodu (±%1, E96 değeri)',
@@ -83,6 +84,7 @@ const strings = {
     cc_smd4: 'SMD 4-digit code',
     cc_smdEia: 'EIA-96 code',
     cc_jumper: '0 Ω jumper',
+    warn_cc_ambiguous: 'This code can be read two ways. With R as the decimal point it is {a} (shown here); as an EIA-96 code, that is on a small 1 % resistor where the multiplier letter R means ×0.01, it is {b}. If in doubt, measure the part.',
     cc_kind_3: '3-digit code (usually ±5 %)',
     cc_kind_4: '4-digit code (usually ±1 %)',
     cc_kind_eia96: 'EIA-96 code (±1 %, E96 value)',
@@ -260,6 +262,7 @@ export default {
     const sub = r.tolPct !== null ? `±${fmt(r.tolPct)} %` : esc(t(`cc_kind_${r.kind}`));
     return hero('cc_result', siHtml(r.ohms, 'Ω'), sub)
       + bandsText
+      + (r.smd?.alt ? messages('warn', ['cc_ambiguous'], { cc_ambiguous: { a: si(r.ohms, 'Ω'), b: si(r.smd.alt.ohms, 'Ω') } }) : '')
       + (r.mode === 'encode' && !r.exact ? `<ul class="msg warn"><li>${esc(t('cc_notExact'))}</li></ul>` : '')
       + worked(r)
       + block('results', rows([

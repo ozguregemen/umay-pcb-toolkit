@@ -65,7 +65,9 @@ export function mosfetSwitch({ id, vdrive, rds, vgsSpec, vth, qg, vpl, rg, idrv,
   const vgs = hasRpd && hasRg ? (vdrive * rpd) / (rpd + rg) : vdrive;
   const overPlateau = vdrive - vpl;
   const iRg = hasRg ? overPlateau / rg : Infinity;
-  const ig = Math.min(idrv, iRg);
+  // Below the plateau the gate never reaches the charge needed to switch:
+  // there is no plateau current and no turn-on time to speak of.
+  const ig = overPlateau > 0 ? Math.min(idrv, iRg) : 0;
   const tOn = overPlateau > 0 ? qg / ig : Infinity;
   const hasF = Number.isFinite(fsw) && fsw > 0;
   return {

@@ -160,10 +160,11 @@ export default {
     {
       title: 'pd_target',
       fields: [
-        { key: 'V', type: 'number', label: 'pd_vdd', default: 1.0, units: ['V'],
+        // Defaults: a 3.3 V / 2 A rail that the default capacitor bank below meets.
+        { key: 'V', type: 'number', label: 'pd_vdd', default: 3.3, units: ['V'],
           presets: [0.8, 1.0, 1.2, 1.8, 3.3, 5].map((x) => ({ label: `${x} V`, value: x })) },
         { key: 'rp', type: 'number', label: 'pd_ripple', default: 3, units: ['pct'], max: 100, info: 'pd_rippleInfo' },
-        { key: 'I', type: 'number', label: 'pd_imax', default: 5, units: ['A'] },
+        { key: 'I', type: 'number', label: 'pd_imax', default: 2, units: ['A'] },
         { key: 'st', type: 'number', label: 'pd_step', default: 50, units: ['pct'], max: 100, info: 'pd_stepInfo' },
         { key: 'fr', type: 'number', label: 'pd_freg', default: 100, units: ['kHz', 'MHz'], info: 'pd_fregInfo' },
         { key: 'fm', type: 'number', label: 'pd_fmax', default: 100, units: ['MHz', 'GHz'], info: 'pd_fmaxInfo' },

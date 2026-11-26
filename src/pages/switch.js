@@ -312,7 +312,7 @@ function renderMos(r, v, u, worked) {
   const ton = Number.isFinite(r.tOn) ? siHtml(r.tOn, 's') : '∞';
   return heroes([
     ['sw_pcond', siHtml(r.pCond, 'W'), esc(t('sw_pcondSub', { p: si(r.pCondHot, 'W', 3) }))],
-    ['sw_ton', ton, esc(t('sw_tonSub', { i: si(r.ig, 'A', 3) }))],
+    ['sw_ton', ton, r.plateauOk ? esc(t('sw_tonSub', { i: si(r.ig, 'A', 3) })) : ''],
     ['sw_vds', siHtml(r.vds, 'V')],
   ])
     + messages('warn', r.warnings, r.vars)
@@ -324,8 +324,8 @@ function renderMos(r, v, u, worked) {
       ['sw_pcond', si(r.pCond, 'W')],
       [t('sw_pHot', { k: fmt(HOT_FACTOR) }), si(r.pCondHot, 'W'), false, true],
       ['sw_igPeak', si(r.igPeak, 'A', 3)],
-      ['sw_ig', si(r.ig, 'A', 3)],
-      ['sw_limited', esc(t(r.limitedBy === 'rg' ? 'sw_limRg' : 'sw_limDrv'))],
+      ['sw_ig', r.plateauOk ? si(r.ig, 'A', 3) : '—'],
+      r.plateauOk && ['sw_limited', esc(t(r.limitedBy === 'rg' ? 'sw_limRg' : 'sw_limDrv'))],
       ['sw_ton', Number.isFinite(r.tOn) ? si(r.tOn, 's', 3) : '∞', true],
       r.iPd > 0 && ['sw_iPd', si(r.iPd, 'A', 3)],
       Number.isFinite(r.pGate) && ['sw_pGate', si(r.pGate, 'W', 3)],

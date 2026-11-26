@@ -33,6 +33,16 @@ export const cases = [
     eq(decodeSmd('68X', e96).ohms, 49.9); // E96 #68 = 499 × 0.1
     eq(decodeSmd('000', e96).ohms, 0);
     eq(decodeSmd('ABC', e96).ok, false);
+    // Two digits + R: read as R = decimal point; the EIA-96 reading (×0.01) is the alternative.
+    eq(decodeSmd('47R', e96).ohms, 47);
+    eq(decodeSmd('47R', e96).alt.ohms, 3.01); // E96 #47 = 301 × 0.01
+    eq(decodeSmd('10R', e96).alt.ohms, 1.24); // E96 #10 = 124 × 0.01
+    eq(decodeSmd('01R', e96).ohms, 1);
+    eq(decodeSmd('01R', e96).alt, undefined); // both readings give 1 Ω
+    eq(decodeSmd('47C', e96).ohms, 30100); // other letters stay EIA-96
+    eq(decodeSmd('47C', e96).alt, undefined);
+    eq(decodeSmd('10R0', e96).ohms, 10);
+    eq(decodeSmd('00R', e96).ohms, 0);
     const s = encodeSmd(4700, e96);
     eq(s.three, '472'); eq(s.four, '4701');
     eq(encodeSmd(4.7, e96).three, '4R7');

@@ -76,6 +76,7 @@ const strings = {
     iz_cgFor: 'Hedef akım için gereken CG',
     iz_cgNeg: 'Cgd tek başına yetiyor (CG gerekmez)',
     iz_r25min: 'En küçük NTC R25',
+    iz_stepNoNtc: 'Sonuç sıfır ya da negatif: yoldaki seri direnç akımı zaten hedefin altında tutuyor. NTC gerekmez; en küçük değer 0 Ω alınır.',
     iz_vpk: 'Tepe gerilim',
     iz_withNtc: 'NTC ile tepe akım',
     iz_ntcE: 'NTC’nin soğuracağı enerji ≈ ½·C·V²',
@@ -167,6 +168,7 @@ const strings = {
     iz_cgFor: 'CG needed for the target current',
     iz_cgNeg: 'Cgd alone is enough (no CG needed)',
     iz_r25min: 'Minimum NTC R25',
+    iz_stepNoNtc: 'The result is zero or negative: the series resistance of the path already keeps the current below the target. No NTC is needed; the minimum is taken as 0 Ω.',
     iz_vpk: 'Peak voltage',
     iz_withNtc: 'Peak current with NTC',
     iz_ntcE: 'Energy the NTC must absorb ≈ ½·C·V²',
@@ -368,7 +370,8 @@ function ntcSteps(r, v) {
   return steps([
     ac && { label: 'iz_vpk', sym: 'V_{pk} = \\sqrt{2} \\cdot V_{rms}', num: `\\sqrt{2} \\cdot ${q(v.v, 'V')}`, res: Vpk },
     { label: 'iz_rSer', sym: 'R_s = R_{src} + R_{tr} + ESR', num: `${q(n0(v.rsrc), 'Ω')} + ${q(n0(v.rtr), 'Ω')} + ${q(n0(v.esr), 'Ω')}`, res: Rs },
-    { label: 'iz_r25min', sym: 'R_{25,min} = \\frac{V_{pk}}{I_{max}} − R_s', num: `\\frac{${Vpk}}{${q(v.ipk, 'A')}} − ${Rs}`, res: q(r.r25Min, 'Ω') },
+    { label: 'iz_r25min', sym: 'R_{25,min} = \\frac{V_{pk}}{I_{max}} − R_s', num: `\\frac{${Vpk}}{${q(v.ipk, 'A')}} − ${Rs}`, res: q(r.r25Min, 'Ω'),
+      note: r.r25Min <= 0 ? 'iz_stepNoNtc' : undefined },
     limited && { label: 'iz_withNtc', sym: `I_{pk} = \\frac{V_{pk}}{${rTot[0]}}`, num: `\\frac{${Vpk}}{${rTot[1]}}`, res: q(r.iPeak, 'A') },
     { label: 'iz_ntcE', sym: `E = ${HALF} \\cdot C \\cdot V_{pk}^{2}`, num: `${HALF} \\cdot ${C} \\cdot {(${Vpk})}^{2}`, res: q(r.energy, 'J') },
     limited && { label: 'iz_tau', sym: ntc ? `τ = (${rTot[0]}) \\cdot C` : 'τ = R_s \\cdot C', num: ntc ? `(${rTot[1]}) \\cdot ${C}` : `${Rs} \\cdot ${C}`, res: q(r.tau, 's') },
@@ -533,7 +536,7 @@ export default {
     }
     if (v.mode === 'ntc') {
       return heroes([
-        ['iz_r25min', r.r25Min > 0 ? siHtml(r.r25Min, 'Ω', 3) : '—'],
+        ['iz_r25min', r.r25Min > 0 ? siHtml(r.r25Min, 'Ω', 3) : '0 <span class="u">Ω</span>'],
         ['iz_withNtc', siHtml(r.iPeak, 'A', 3)],
       ])
         + messages('warn', r.warnings)

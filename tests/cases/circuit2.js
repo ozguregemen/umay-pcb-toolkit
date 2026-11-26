@@ -142,6 +142,8 @@ export const cases = [
     ok(!mosfetSwitch({ ...base, vdrive: 3.3, vgsSpec: 4.5 }).vgsOk, 'Vgs below spec');
     // Drive below the 3.5 V plateau: never fully on
     const p = mosfetSwitch({ ...base, vdrive: 3.3, vgsSpec: 2.5, vpl: 3.5 });
+    eq(p.ig, 0, 'no plateau current when the drive stays below the plateau');
+    eq(mosfetSwitch({ ...base, rg: 0, vdrive: 3.3, vgsSpec: 2.5, vpl: 3.5 }).ig, 0, 'also without a gate resistor');
     ok(!p.plateauOk && p.tOn === Infinity, 'plateau');
     // No Rg: the driver current sets Ig = 20 mA → 6 nC / 20 mA = 300 ns
     const d = mosfetSwitch({ ...base, rg: 0, vdrive: 5, vgsSpec: 4.5 });

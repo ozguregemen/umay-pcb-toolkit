@@ -56,7 +56,21 @@ export const EIA96_MULT = { Z: 0.001, Y: 0.01, R: 0.01, X: 0.1, S: 0.1, A: 1, B:
 export function decodeSmd(code, e96) {
   const c = String(code).trim().toUpperCase().replace(/\s+/g, '');
   if (/^0+$/.test(c)) return { ok: true, ohms: 0, kind: 'zero', code: c, rule: 'zero' };
-  let m = c.match(/^(\d{2})([ZYRXSABHCDEF])$/);
+  // Two digits + R can be read two ways: R as the decimal point (47R = 47 Ω,
+  // the usual meaning) or as an EIA-96 code whose multiplier letter R is ×0.01
+  // (47R = 3.01 Ω on a 1 % part). The plain reading is returned and the other
+  // one is given in `alt` when it differs.
+  let m = c.match(/^(\d{2})R$/);
+  if (m) {
+    const ohms = Number(m[1]);
+    const i = Number(m[1]);
+    const eia = e96 && i >= 1 && i <= 96 ? Number((e96[i - 1] * EIA96_MULT.R).toPrecision(6)) : null;
+    const alt = eia !== null && eia !== ohms
+      ? { ohms: eia, rule: 'eia96', index: m[1], value: e96[i - 1], letter: 'R', mult: EIA96_MULT.R }
+      : null;
+    return { ok: true, ohms, kind: ohms === 0 ? 'zero' : '3', code: c, rule: ohms === 0 ? 'zero' : 'point', ...(alt ? { alt } : {}) };
+  }
+  m = c.match(/^(\d{2})([ZYRXSABHCDEF])$/);
   if (m && e96) {
     const i = Number(m[1]);
     if (i < 1 || i > 96) return { ok: false, errors: ['smd'] };
