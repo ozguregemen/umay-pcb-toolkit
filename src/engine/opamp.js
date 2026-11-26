@@ -47,7 +47,8 @@ export function bestRatioPair(k, base, series) {
     const tie = Math.abs(Math.log(rb / base));
     if (!best || err < best.err - 1e-12 || (err <= best.err + 1e-12 && tie < best.tie)) best = { rf, rb, err, tie };
   }
-  return best && { rf: best.rf, rb: best.rb, ratio: best.rf / best.rb, errorPct: ((best.rf / best.rb - k) / k) * 100 };
+  // rfExact: the feedback value the ratio asks for with the chosen Rb, before rounding to the series.
+  return best && { rf: best.rf, rb: best.rb, ratio: best.rf / best.rb, errorPct: ((best.rf / best.rb - k) / k) * 100, rfExact: k * best.rb };
 }
 
 /**
@@ -167,6 +168,8 @@ export function sallenKeyLowPass({ fc, q, c2, capSeries, resSeries }) {
   return {
     kind: 'lp', qTarget: q, f0Target: f0, ratio: x, c1, c2, r1Exact, r2Exact, r1, r2,
     f0: f0Got, q: qGot, fc: f0Got * cutoffRatio(qGot),
+    // Intermediate values for the calculation steps: lower limit of C1, R1 + R2, R1 · R2 and fc/f0 of the result.
+    c1Min: 4 * q * q * c2, sumR: a, prodR: b, ratioGot: cutoffRatio(qGot),
   };
 }
 
@@ -185,6 +188,7 @@ export function sallenKeyHighPass({ fc, q, c, resSeries }) {
   return {
     kind: 'hp', qTarget: q, f0Target: f0, ratio: x, c1: c, c2: c, r1Exact, r2Exact, r1, r2,
     f0: f0Got, q: qGot, fc: f0Got / cutoffRatio(qGot),
+    ratioGot: cutoffRatio(qGot), // f0/fc of the result, for the calculation steps
   };
 }
 

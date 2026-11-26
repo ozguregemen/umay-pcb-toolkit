@@ -1,7 +1,8 @@
 import { combine } from '../engine/passives.js';
 import { nearestStandard } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, invalid } from '../ui/calculator.js';
-import { si, siHtml, fmt } from '../ui/format.js';
+import { heroes, rows, block, steps, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
+import { si, siHtml } from '../ui/format.js';
 import { svg, twoTerm, wire, node, terminal, text } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
@@ -134,18 +135,31 @@ export default {
     return { ...combine(v.k, values), kind: v.k };
   },
 
-  render(r) {
+  render(r, v) {
     if (!r.ok) return invalid(r.errors);
     const u = UNIT[r.kind];
+    // Calculation steps with the values in use (the engine ignores empty fields);
+    // designators keep the field number, as in the diagram.
+    const k = r.kind;
+    const items = [1, 2, 3, 4, 5, 6].map((i) => ({ i, x: v[`v${i}`] })).filter((o) => o.x > 0);
+    const q = (x) => tx(si(x, u));
+    const one = items.length === 1;
+    const sum = { sym: items.map((o) => `${k}_${o.i}`).join(' + '), num: one ? '' : items.map((o) => q(o.x)).join(' + ') };
+    const recip = one ? sum : {
+      sym: `\\frac{1}{${items.map((o) => `\\frac{1}{${k}_${o.i}}`).join(' + ')}}`,
+      num: `\\frac{1}{${items.map((o) => `\\frac{1}{${q(o.x)}}`).join(' + ')}}`,
+    };
+    const step = (label, f, res) => ({ label, sym: `${k}_{eq} = ${f.sym}`, num: f.num, res: q(res) });
     return heroes([['cb_series', siHtml(r.series, u)], ['cb_parallel', siHtml(r.parallel, u)]])
+      + steps([
+        step('cb_series', k === 'C' ? recip : sum, r.series),
+        step('cb_parallel', k === 'C' ? sum : recip, r.parallel),
+      ], { note: 'cb_note', refs: ['P. Horowitz & W. Hill, The Art of Electronics, 3rd ed., ch. 1'],
+        where: items.map((o) => [`${k}_${o.i}`, `cb_v${o.i}_${k}`, `v${o.i}`]) })
       + block('results', rows([
         ['cb_count', String(r.n)],
         r.kind === 'R' && ['cb_e24s', si(nearestStandard(r.series, 'E24').nearest, 'Ω')],
         r.kind === 'R' && ['cb_e24p', si(nearestStandard(r.parallel, 'E24').nearest, 'Ω')],
-      ]))
-      + formulaBlock([
-        'R, L:  series = Σ x_i        parallel = 1 / Σ (1/x_i)',
-        'C:     series = 1 / Σ (1/C_i)   parallel = Σ C_i',
-      ], 'cb_note', ['P. Horowitz & W. Hill, The Art of Electronics, 3rd ed., ch. 1']);
+      ]));
   },
 };

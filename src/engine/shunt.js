@@ -34,11 +34,14 @@ export function shuntBelow(r) {
   return best;
 }
 
+/** Default margin of the suggested rating: the part is loaded to at most half of its derated rating. */
+export const RATING_MARGIN = 2;
+
 /**
  * Smallest rating that keeps the dissipation at ≤ 1/margin of the derated rating.
  * @returns {number|null} rating (W) or null when above the list
  */
-export function shuntRating(p, tAmb, margin = 2) {
+export function shuntRating(p, tAmb, margin = RATING_MARGIN) {
   const k = derateFactor(tAmb);
   if (!(k > 0)) return null;
   return SHUNT_RATINGS_W.find((w) => w * k >= p * margin * (1 - 1e-9)) ?? null;
@@ -99,6 +102,8 @@ export function shuntDesign(p) {
     p: pw,
     derate: derateFactor(tAmb),
     rating: shuntRating(pw, tAmb),
+    // Smallest rating that satisfies the margin at this ambient (Infinity when fully derated); for the calculation steps.
+    ratingMin: (pw * RATING_MARGIN) / derateFactor(tAmb),
     dropPct: Number.isFinite(vbus) && vbus > 0 ? (vSense / vbus) * 100 : NaN,
     errFull: at(imax),
     errLow: at(imax / 10),

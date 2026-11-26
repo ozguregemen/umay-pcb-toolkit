@@ -22,7 +22,8 @@ export function astableDesign(f, duty, c) {
   const tHigh = period * duty;
   const r2 = tLow / (LN2 * c);
   const r1 = tHigh / (LN2 * c) - r2;
-  return { ok: true, r1, r2 };
+  // `target`: the timing the resistors were solved for (for the calculation steps).
+  return { ok: true, r1, r2, target: { period, tHigh, tLow } };
 }
 
 export function monostable(r, c) {

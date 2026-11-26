@@ -1,6 +1,7 @@
 import { RISE_K, busCapacitance, i2cPullup } from '../engine/i2c.js';
 import { TOLERANCE } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages, checks } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, rect, path, dimH, axes, wave, circle } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -63,6 +64,9 @@ const strings = {
     ic_chkMax: 'Yükselme süresi ≤ tr(max)',
     ic_chkLeak: 'Yüksek seviye ≥ 0,9·VDD (kaçak akımla)',
     ic_note: 'Rp(min), sürücü pin IOL akımını çekerken çıkışın VOL’ün altında kalması içindir; Rp(max), RC yükselmesinin 0,3·VDD’den 0,7·VDD’ye sınır süre içinde tamamlanması içindir. Öneri, aralığın içinde olup yükselme süresini sınırın en çok %80’inde tutan en büyük standart değerdir: büyük değer daha az akım, küçük değer daha hızlı kenar demektir. Kapasitans tahmini kabadır; prototipte yükselme süresini osiloskopla ölçün.',
+    ic_stepLimit: 'Yükselme süresi payıyla üst sınır',
+    ic_stepRec: 'Seçilen E-serisinde bu sınırı aşmayan ve Rp(min)’in altına inmeyen en büyük değer.',
+    ic_stepRecTight: 'Yükselme süresini sınırın %80’inde tutan standart değer yok; seçilen E-serisinde Rp(min) ile Rp(max) arasındaki en büyük değer kullanılır.',
     warn_ic_cbOver: 'Cb = {cb}, bu modda izin verilen {max} değerini aşıyor. Hattı kısaltın, cihaz sayısını azaltın ya da bir I²C tamponu (buffer) kullanın.',
     warn_ic_tight: 'Yükselme süresini sınırın %80’inde tutan standart değer yok; önerilen değer aralıkta ama kenar sınıra yakın.',
     warn_ic_lowVddSm: 'UM10204, VDD ≤ 2 V için düşük seviye değerini (VOL2 = 0,2·VDD, 2 mA) yalnızca Fast-mode ve Fast-mode Plus’ta tanımlar. Standard-mode cihazların veri sayfalarını kontrol edin.',
@@ -131,6 +135,9 @@ const strings = {
     ic_chkMax: 'Rise time ≤ tr(max)',
     ic_chkLeak: 'HIGH level ≥ 0.9·VDD (with leakage)',
     ic_note: 'Rp(min) keeps the output below VOL while the driver sinks IOL; Rp(max) lets the RC edge rise from 0.3·VDD to 0.7·VDD within the limit. The recommendation is the largest standard value inside the range that keeps the rise time at no more than 80 % of the limit: a larger value means less current, a smaller one a faster edge. The capacitance estimate is rough; measure the rise time on the prototype.',
+    ic_stepLimit: 'Upper limit with rise-time margin',
+    ic_stepRec: 'The largest value of the chosen E-series that is not above this limit and not below Rp(min).',
+    ic_stepRecTight: 'No standard value keeps the rise time at 80 % of the limit; the largest value of the chosen E-series between Rp(min) and Rp(max) is used.',
     warn_ic_cbOver: 'Cb = {cb} exceeds the {max} allowed in this mode. Shorten the bus, reduce the device count or use an I²C buffer.',
     warn_ic_tight: 'No standard value keeps the rise time at 80 % of the limit; the recommended value is inside the range but the edge is close to the limit.',
     warn_ic_lowVddSm: 'For VDD ≤ 2 V, UM10204 defines the LOW level (VOL2 = 0.2·VDD at 2 mA) only for Fast-mode and Fast-mode Plus. Check the datasheets of Standard-mode devices.',
@@ -300,7 +307,7 @@ export default {
     return { ok: true, ...r, cap, user, warnings, vars };
   },
 
-  render(r, v) {
+  render(r, v, u) {
     const rec = r.rec;
     const errVars = { ic_empty: { min: si(r.rpMin, 'Ω', 3), max: si(r.rpMax, 'Ω', 3) } };
     const recHero = rec
@@ -319,9 +326,43 @@ export default {
       leakOn && ['ic_vHigh', si(x.vHigh, 'V', 3)],
     ]);
     const user = r.user;
+    // Calculation steps: the window from the bus capacitance and the mode's
+    // limits, then the standard value picked inside it.
+    const qR = (x) => tx(si(x, 'Ω'));
+    const qV = (x) => tx(si(x, 'V'));
+    const qC = (x) => tx(si(x, 'F'));
+    const qT = (x) => tx(si(x, 's'));
+    const kRise = fmt(RISE_K, 4);
+    const lnRise = `\\ln\\frac{${fmt(0.7)}}{${fmt(0.3)}}`;
+    const est = cap.pins !== undefined;
+    const riseOf = (x) => `${kRise} \\cdot ${qR(x.r)} \\cdot ${qC(r.cb)}`;
+    const worked = steps([
+      est && { label: 'ic_cbTotal', sym: `C_{b} = n \\cdot C_{i} + C′ \\cdot ℓ${cap.other > 0 ? ' + C_{other}' : ''}`,
+        num: `${v.n} \\cdot ${qC(v.pinc * 1e-12)} + ${tx(`${fmt(v.cpl)} pF/cm`)} \\cdot ${tx(`${fmt(v.len)} ${u?.len ?? 'cm'}`)}${cap.other > 0 ? ` + ${qC(cap.other)}` : ''}`,
+        res: qC(r.cb) },
+      { label: 'ic_rpMin', sym: `${r.lowVdd ? `V_{OL} = ${fmt(0.2)} \\cdot V_{DD}, \\quad ` : ''}R_{p,min} = \\frac{V_{DD} − V_{OL}}{I_{OL}}`,
+        num: `\\frac{${qV(v.vdd)} − ${qV(r.vol)}}{${tx(si(r.iol, 'A'))}}`, res: qR(r.rpMin) },
+      { label: 'ic_rpMaxRise', sym: `R_{p,max} = \\frac{t_{r,max}}{${lnRise} \\cdot C_{b}}`,
+        num: `\\frac{${qT(r.trMax)}}{${kRise} \\cdot ${qC(r.cb)}}`, res: qR(r.rpMaxRise) },
+      leakOn && { label: 'ic_rpMaxLeak', sym: `R_{p,leak} = \\frac{${fmt(0.1)} \\cdot V_{DD}}{n \\cdot I_{i}}`,
+        num: `\\frac{${fmt(0.1)} \\cdot ${qV(v.vdd)}}{${v.n} \\cdot ${tx(si(v.leak * 1e-6, 'A'))}}`, res: qR(r.rpMaxLeak) },
+      rec && !r.tight && { label: 'ic_stepLimit', sym: `R_{p} \\le ${fmt(r.margin)} \\cdot ${leakOn ? '\\min(R_{p,max}, R_{p,leak})' : 'R_{p,max}'}`,
+        num: `${fmt(r.margin)} \\cdot ${qR(r.rpMax)}`, res: qR(r.rpTarget) },
+      rec && { label: 'ic_rec', sym: 'R_{p}', res: qR(rec.r), note: r.tight ? 'ic_stepRecTight' : 'ic_stepRec' },
+      rec && { label: 'ic_tr', sym: `t_{r} = ${lnRise} \\cdot R_{p} \\cdot C_{b}`, num: riseOf(rec), res: qT(rec.tr) },
+      user && { label: 'ic_userTitle', sym: `t_{r} = ${lnRise} \\cdot R_{p} \\cdot C_{b}`, num: riseOf(user), res: qT(user.tr) },
+    ], {
+      note: 'ic_note',
+      where: [['V_{DD}', 'ic_vdd', 'vdd'], est && ['n', 'ic_devices', 'n'], est && ['C_{i}', 'ic_pinC', 'pinc'], est && ['C′', 'ic_cpl', 'cpl'],
+        est && ['ℓ', 'ic_len', 'len'], est && cap.other > 0 && ['C_{other}', 'ic_cx', 'cx'], !est && ['C_{b}', 'ic_cb', 'cbd'],
+        ['V_{OL}', 'ic_vol'], ['I_{OL}', 'ic_iol', 'mode'], ['t_{r,max}', 'ic_trMax', 'mode'],
+        leakOn && !est && ['n', 'ic_devices', 'n'], leakOn && ['I_{i}', 'ic_leak', 'leak'], user && ['R_{p}', 'ic_rpu', 'rpu']],
+      refs: ['NXP UM10204 Rev. 7.0 (2021), §7.1, Tables 9–10', 'TI SLVA689 (I²C bus pull-up resistor calculation)', 'IEC 60063:2015 (E-series)'],
+    });
     return heroes([recHero, ['ic_window', range, esc(t('ic_windowSub'))]])
       + (r.windowOk ? '' : messages('error', ['ic_empty'], errVars))
       + messages('warn', r.warnings, r.vars)
+      + worked
       + (rec ? block('ic_withRec', at(rec)) : '')
       + (user ? block('ic_userTitle', checks([
         [user.iSink <= r.iol * (1 + 1e-9), esc(t('ic_chkMin')), `${esc(si(user.iSink, 'A', 3))} / ${esc(si(r.iol, 'A', 3))}`],
@@ -342,17 +383,6 @@ export default {
         cap.other > 0 && ['ic_cbOther', si(cap.other, 'F', 3)],
         ['ic_cbTotal', si(cap.cb, 'F', 3), true],
         ['ic_cbMax', si(r.cbMax, 'F', 3)],
-      ]))
-      + formulaBlock([
-        'Rp(min) = (VDD − VOL) / IOL',
-        '          VDD > 2 V: VOL = 0.4 V, IOL = 3 mA (Sm, Fm) / 20 mA (Fm+)',
-        '          VDD ≤ 2 V: VOL = 0.2 · VDD, IOL = 2 mA',
-        `Rp(max) = tr / (0.8473 · Cb),   0.8473 = ln(0.7 / 0.3) = ${RISE_K.toFixed(4)}`,
-        '          tr(max) = 1000 ns (Sm) / 300 ns (Fm) / 120 ns (Fm+)',
-        'Rp(max) ≤ 0.1 · VDD / (n · Ii)   (VnH = 0.2 · VDD above VIH = 0.7 · VDD)',
-        'Cb = n · Ci + C′ · ℓ + C_other',
-      ], 'ic_note', ['NXP UM10204 Rev. 7.0 (2021), §7.1, Tables 9–10', 'TI SLVA689 (I²C bus pull-up resistor calculation)', 'IEC 60063:2015 (E-series)']);
+      ]));
   },
 };
-
-

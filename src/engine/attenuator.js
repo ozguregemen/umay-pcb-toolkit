@@ -6,11 +6,12 @@
 
 const par = (a, b) => (a * b) / (a + b);
 
+// K (the voltage ratio) is returned with the resistors, for showing the calculation step by step.
 export function attenuatorValues(topology, dB, z0) {
   const K = 10 ** (dB / 20);
-  if (topology === 'pi') return { r1: (z0 * (K + 1)) / (K - 1), r2: (z0 * (K * K - 1)) / (2 * K) };
-  if (topology === 't') return { r1: (z0 * (K - 1)) / (K + 1), r2: (z0 * 2 * K) / (K * K - 1) };
-  return { r1: z0 * (K - 1), r2: z0 / (K - 1), r3: z0 }; // bridged-T
+  if (topology === 'pi') return { r1: (z0 * (K + 1)) / (K - 1), r2: (z0 * (K * K - 1)) / (2 * K), K };
+  if (topology === 't') return { r1: (z0 * (K - 1)) / (K + 1), r2: (z0 * 2 * K) / (K * K - 1), K };
+  return { r1: z0 * (K - 1), r2: z0 / (K - 1), r3: z0, K }; // bridged-T
 }
 
 /**
@@ -23,12 +24,16 @@ export function analyseAttenuator(topology, { r1, r2, r3 }, z0) {
   let zin;
   let vLoad;
   let diss;
+  // Intermediate values, for showing the calculation step by step: the parallel
+  // branch R_p (Pi, T) or the source EMF and the node voltages (bridged-T).
+  let detail;
   if (topology === 'pi') {
     const rest = par(r1, z0);
     zin = par(r1, r2 + rest);
     const v1 = (vs * zin) / (zin + z0);
     vLoad = (v1 * rest) / (r2 + rest);
     diss = { r1in: v1 * v1 / r1, r2: (v1 - vLoad) ** 2 / r2, r1out: vLoad * vLoad / r1 };
+    detail = { rp: rest };
   } else if (topology === 't') {
     const shunt = par(r2, r1 + z0);
     zin = r1 + shunt;
@@ -37,6 +42,7 @@ export function analyseAttenuator(topology, { r1, r2, r3 }, z0) {
     const i2 = vMid / (r1 + z0);
     vLoad = i2 * z0;
     diss = { r1in: i1 * i1 * r1, r2: vMid * vMid / r2, r1out: i2 * i2 * r1 };
+    detail = { rp: shunt };
   } else {
     // Bridged-T: nodes in (a), out (b), centre (c). Series arms r3 between a–c and c–b,
     // bridge r1 between a–b, shunt r2 from c to ground. Solve with nodal analysis.
@@ -54,6 +60,7 @@ export function analyseAttenuator(topology, { r1, r2, r3 }, z0) {
     zin = va / iin;
     vLoad = vb;
     diss = { r1: (va - vb) ** 2 / r1, r2: vc * vc / r2, r3a: (va - vc) ** 2 / r3, r3b: (vc - vb) ** 2 / r3 };
+    detail = { vs, va, vb };
   }
   const gamma = (zin - z0) / (zin + z0);
   // Available source power with vs = 2 V into z0: (vs/2)²/z0 → scale dissipation to 1 W.
@@ -65,6 +72,7 @@ export function analyseAttenuator(topology, { r1, r2, r3 }, z0) {
     insertionLossDb: -20 * Math.log10(vLoad),
     returnLossDb: Math.abs(gamma) < 1e-12 ? Infinity : -20 * Math.log10(Math.abs(gamma)),
     dissipationPerWatt: diss,
+    detail,
   };
 }
 

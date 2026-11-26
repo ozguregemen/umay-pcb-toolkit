@@ -87,6 +87,7 @@ export function calculatePadstack(p) {
     minHole: nominalHole - tol,
     maxHole,
     drill,
+    maxDrill,
     fabAllowance: c,
     landExt,
     landInt,

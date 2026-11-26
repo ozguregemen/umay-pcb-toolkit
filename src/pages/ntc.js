@@ -1,6 +1,7 @@
-import { K0, betaR, shR, shFit, betaBetween, bestSeries, dividerOut, ntcPoint, maxDissipation } from '../engine/ntc.js';
+import { K0, betaR, shR, shT, shFit, betaBetween, bestSeries, dividerOut, ntcPoint, maxDissipation } from '../engine/ntc.js';
 import { nearestStandard } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, path, axes, wave, circle, block as icBlock } from '../ui/svg.js';
 import { t, getLang } from '../i18n.js';
@@ -72,6 +73,11 @@ const strings = {
     nt_dTMax: 'En büyük öz ısınma',
     nt_modelRows: 'Model katsayıları',
     nt_bEq: 'Eşdeğer B (Tmin–Tmax)',
+    nt_stepSolve: 'Bu denklem R için kapalı biçimde çözülmez; R sayısal olarak (ln R üzerinde Newton yinelemesiyle) bulunur. Bulunan R yerine konunca değerlendirme sıcaklığı geri elde edilir. R ohm, T kelvin cinsindendir.',
+    nt_stepRs: 'Aşağıdaki adımlarda seçilen E-serisindeki en yakın değer kullanılır.',
+    nt_stepSlope: 'Eğrinin T’deki eğimi, T ± h komşu noktalarından sayısal olarak alınır.',
+    nt_whL: 'ln R(Tᵢ), R ohm cinsinden',
+    nt_whY: '1 / Tᵢ, T kelvin cinsinden',
     nt_note: 'ADC kodu ideal dönüştürücü içindir (geçişler ½ LSB’de). Çözünürlük, eğrinin o sıcaklıktaki eğimidir; doğruluk ayrıca termistör toleransına (R25 ve B), Rs toleransına ve ADC hatalarına bağlıdır. Öz ısınma, ölçülen sıcaklığı her zaman yukarı kaydırır; kesintili ölçümde bölücüyü yalnızca okurken beslemek gücü azaltır.',
     warn_nt_outside: 'Değerlendirme sıcaklığı seçilen aralığın dışında.',
     warn_nt_selfHeat: 'Öz ısınma {dT}: ölçüm bu kadar yüksek okunur. Rs’yi büyütün, daha düşük besleme kullanın ya da bölücüyü yalnızca ölçüm sırasında besleyin.',
@@ -152,6 +158,11 @@ const strings = {
     nt_dTMax: 'Largest self-heating',
     nt_modelRows: 'Model coefficients',
     nt_bEq: 'Equivalent B (Tmin–Tmax)',
+    nt_stepSolve: 'This equation has no closed-form solution for R; R is found numerically (Newton iteration on ln R). Putting that R back in returns the evaluation temperature. R is in ohms, T in kelvin.',
+    nt_stepRs: 'The steps below use the nearest value of the chosen E-series.',
+    nt_stepSlope: 'Slope of the curve at T, taken numerically from the two neighbouring points T ± h.',
+    nt_whL: 'ln R(Tᵢ), R in ohms',
+    nt_whY: '1 / Tᵢ, T in kelvin',
     nt_note: 'The ADC code is for an ideal converter (transitions at ½ LSB). Resolution is the slope of the curve at that temperature; accuracy also depends on the thermistor tolerance (R25 and B), the Rs tolerance and ADC errors. Self-heating always makes the reading high; in intermittent measurements, powering the divider only while reading reduces it.',
     warn_nt_outside: 'The evaluation temperature is outside the chosen range.',
     warn_nt_selfHeat: 'Self-heating is {dT}: the reading will be that much high. Increase Rs, use a lower supply or power the divider only while measuring.',
@@ -252,6 +263,86 @@ function curveDiagram(v, r) {
 }
 
 const diagram = (v, u, r) => dividerDiagram(v, r) + curveDiagram(v, r);
+
+// ---------------------------------------------------------------------------
+// Calculation steps
+// ---------------------------------------------------------------------------
+
+/** Small coefficient as mantissa · 10^exponent in the formula notation; `wrap` puts a negative value in parentheses. */
+function sci(x, wrap = true) {
+  if (!Number.isFinite(x) || x === 0) return '0';
+  const e = Math.floor(Math.log10(Math.abs(x)));
+  const body = e === 0 ? fmt(Math.abs(x), 7) : `${fmt(Math.abs(x) / 10 ** e, 7)} \\cdot 10^{${e < 0 ? `−${-e}` : e}}`;
+  if (x > 0) return body;
+  return wrap ? `(−${body})` : `−${body}`;
+}
+
+/**
+ * Steps from the model to the three headline values. Temperatures are shown in
+ * kelvin and the resistance inside ln() in ohms, as the model equations need them.
+ */
+function worked(r, v) {
+  const pt = r.pt;
+  const top = v.place === 'top';
+  const auto = !(v.rs > 0);
+  const fin = (...xs) => xs.every(Number.isFinite);
+  const K = (x) => tx(`${fmt(x, 6)} K`);
+  const qR = (x) => tx(si(x, 'Ω'));
+  const qV = (x) => tx(si(x, 'V'));
+  // The slope is a small difference of two nearly equal voltages: enough digits
+  // are shown to resolve it (when it is below the number precision, only the result).
+  const dV = Math.abs(pt.voutUp - pt.voutDown);
+  const vDigits = dV > 0 ? Math.max(6, Math.ceil(Math.log10(Math.max(Math.abs(pt.voutUp), Math.abs(pt.voutDown)) / dV)) + 4) : Infinity;
+  const Vn = (x) => tx(`${fmt(x, vDigits)} V`);
+  const slope = (x) => tx(`${fmt(x * 1e3, 4)} mV/°C`);
+  const rLabel = t('nt_rAt', { t: degC(v.tx) });
+  const c = r.coeffs;
+  const f = c?.fit;
+  const L = (i) => (f.l[i] < 0 ? `(${fmt(f.l[i], 7)})` : fmt(f.l[i], 7));
+  // ln R loses digits when R is close to 1 Ω: show more of R then.
+  const rDigits = Math.min(15, 7 + Math.max(0, Math.ceil(-Math.log10(Math.abs(Math.log(pt.r)) || 1))));
+  const lnR = `\\ln(${tx(`${fmt(pt.r, rDigits)} Ω`)})`;
+  const model = v.model === 'beta' ? [
+    { labelRaw: rLabel, sym: 'R(T) = R_{25} \\cdot \\exp(B \\cdot (\\frac{1}{T} − \\frac{1}{T_{25}}))',
+      num: `${qR(v.r25)} \\cdot \\exp(${tx(`${fmt(v.b, 6)} K`)} \\cdot (\\frac{1}{${K(v.tx + K0)}} − \\frac{1}{${K(v.t25 + K0)}}))`, res: qR(pt.r) },
+  ] : [
+    f && fin(f.g2, f.g3) && { labelRaw: 'C', sym: 'γ_{i} = \\frac{Y_{i} − Y_{1}}{L_{i} − L_{1}}, \\quad C = \\frac{γ_{3} − γ_{2}}{(L_{3} − L_{2}) \\cdot (L_{1} + L_{2} + L_{3})}',
+      num: `\\frac{${sci(f.g3)} − ${sci(f.g2)}}{(${L(2)} − ${L(1)}) \\cdot (${L(0)} + ${L(1)} + ${L(2)})}`, res: sci(c.c, false) },
+    f && fin(f.g2, f.g3) && { labelRaw: 'B', sym: 'B = γ_{2} − C \\cdot (L_{1}^{2} + L_{1} \\cdot L_{2} + L_{2}^{2})',
+      num: `${sci(f.g2)} − ${sci(c.c)} \\cdot (${L(0)}^{2} + ${L(0)} \\cdot ${L(1)} + ${L(1)}^{2})`, res: sci(c.b, false) },
+    f && fin(f.g2, f.g3) && { labelRaw: 'A', sym: 'A = Y_{1} − (B + C \\cdot L_{1}^{2}) \\cdot L_{1}',
+      num: `${sci(f.y[0])} − (${sci(c.b)} + ${sci(c.c)} \\cdot ${L(0)}^{2}) \\cdot ${L(0)}`, res: sci(c.a, false) },
+    // The result is the equation evaluated with the R the solver returned (shT), so it shows what that R gives.
+    fin(shT(pt.r, c)) && { labelRaw: rLabel, sym: '\\frac{1}{T} = A + B \\cdot \\ln R + C \\cdot (\\ln R)^{3}',
+      num: `${sci(c.a)} + ${sci(c.b)} \\cdot ${lnR} + ${sci(c.c)} \\cdot {(${lnR})}^{3}`, res: `\\frac{1}{${K(shT(pt.r, c))}}`, note: 'nt_stepSolve' },
+  ];
+  const list = [
+    ...(fin(pt.r) ? model : []),
+    auto && fin(r.rLow, r.rHigh, r.rsOpt) && { label: 'nt_rsOpt', sym: 'R_{s} = \\sqrt{R(T_{min}) \\cdot R(T_{max})}', num: `\\sqrt{${qR(r.rLow)} \\cdot ${qR(r.rHigh)}}`, res: qR(r.rsOpt), note: 'nt_stepRs' },
+    fin(r.rs, pt.r, pt.vout) && { label: 'nt_voutAt', sym: top ? 'V_{out} = V_{ref} \\cdot \\frac{R_{s}}{R_{s} + R_{NTC}}' : 'V_{out} = V_{ref} \\cdot \\frac{R_{NTC}}{R_{s} + R_{NTC}}',
+      num: `${qV(v.vref)} \\cdot \\frac{${qR(top ? r.rs : pt.r)}}{${qR(r.rs)} + ${qR(pt.r)}}`, res: qV(pt.vout) },
+    fin(pt.slope, pt.voutUp, pt.voutDown) && { label: 'nt_sens', sym: 'S = \\frac{dV_{out}}{dT} \\approx \\frac{V_{out}(T + h) − V_{out}(T − h)}{2 h}',
+      num: vDigits <= 15 ? `\\frac{${Vn(pt.voutUp)} − ${Vn(pt.voutDown)}}{2 \\cdot ${tx(`${fmt(pt.h)} K`)}}` : undefined, res: slope(pt.slope), note: 'nt_stepSlope' },
+    fin(pt.degPerLsb, pt.slope) && { label: 'nt_res', sym: 'LSB = \\frac{V_{ref}}{2^{N}}, \\quad ΔT_{LSB} = \\frac{LSB}{|S|}',
+      num: `\\frac{${qV(v.vref)} / 2^{${v.bits}}}{${slope(Math.abs(pt.slope))}}`, res: tx(`${fmt(pt.degPerLsb, 4)} °C/LSB`) },
+    fin(pt.i, pt.r, pt.selfHeat) && { label: 'nt_dT', sym: 'I = \\frac{V_{ref}}{R_{s} + R_{NTC}}, \\quad ΔT = \\frac{I^{2} \\cdot R_{NTC}}{δ}',
+      num: `\\frac{{(${tx(si(pt.i, 'A'))})}^{2} \\cdot ${qR(pt.r)}}{${tx(`${fmt(v.delta)} mW/K`)}}`, res: tx(`${fmt(pt.selfHeat, 4)} °C`) },
+  ].filter(Boolean);
+  if (!list.length) return '';
+  return steps(list, {
+    note: 'nt_note',
+    where: [['T', 'nt_tx', 'tx'],
+      v.model === 'beta' && ['R_{25}', 'nt_r25', 'r25'], v.model === 'beta' && ['B', 'nt_b', 'b'], v.model === 'beta' && ['T_{25}', 'nt_t25', 't25'],
+      v.model === 'sh' && ['A', 'nt_shA', 'sha'], v.model === 'sh' && ['B', 'nt_shB', 'shb'], v.model === 'sh' && ['C', 'nt_shC', 'shc'],
+      f && ['L_{i}', 'nt_whL'], f && ['Y_{i}', 'nt_whY'],
+      ['V_{ref}', 'nt_vref', 'vref'], !auto && ['R_{s}', 'nt_rs', 'rs'], ['N', 'nt_bits', 'bits'], ['δ', 'nt_delta', 'delta']],
+    refs: [
+      'Steinhart & Hart, Deep-Sea Research 15 (1968) 497–503',
+      'TDK/EPCOS, NTC thermistors — general technical information (B value, dissipation constant)',
+      'Vishay, NTC thermistors — R/T characteristics and Steinhart–Hart application note',
+    ],
+  });
+}
 
 // ---------------------------------------------------------------------------
 
@@ -374,6 +465,7 @@ export default {
       ['nt_res', `${esc(fmt(pt.degPerLsb, 3))} <span class="u">°C/LSB</span>`, esc(t('nt_resSub', { s: mvPerC }))],
     ])
       + messages('warn', r.warnings, r.vars)
+      + worked(r, v)
       + block('nt_divider', rows([
         ['nt_rsOpt', si(r.rsOpt, 'Ω')],
         [t('nt_rsStd', { s: v.ser }), si(r.rsStd, 'Ω'), false, true],
@@ -406,20 +498,6 @@ export default {
         r.coeffs && ['B', coeff(r.coeffs.b), false, true],
         r.coeffs && ['C', coeff(r.coeffs.c), false, true],
         ['nt_bEq', `${Math.round(r.bEq)} K`],
-      ]))
-      + formulaBlock([
-        'Beta:            R(T) = R25 · exp(B · (1/T − 1/T25)),   T in K',
-        'Steinhart–Hart:  1/T = A + B·ln R + C·(ln R)³',
-        '                 R(T) = e^x  with  C·x³ + B·x + A − 1/T = 0  (one real root; Newton iteration)',
-        'three-point fit: γ2 = (Y2−Y1)/(L2−L1), γ3 = (Y3−Y1)/(L3−L1),  L = ln R, Y = 1/T',
-        '                 C = (γ3−γ2) / ((L3−L2)(L1+L2+L3)),  B = γ2 − C(L1² + L1L2 + L2²),  A = Y1 − (B + C·L1²)·L1',
-        'divider:  Vout = Vref · Rs / (Rs + R_NTC)  (NTC on top)  or  Vref · R_NTC / (Rs + R_NTC)',
-        'Rs = √(R(Tmin) · R(Tmax))   (largest Vout swing over the range)',
-        'resolution = (Vref / 2^N) / |dVout/dT|,   ΔT_self = I² · R_NTC / δ',
-      ], 'nt_note', [
-        'Steinhart & Hart, Deep-Sea Research 15 (1968) 497–503',
-        'TDK/EPCOS, NTC thermistors — general technical information (B value, dissipation constant)',
-        'Vishay, NTC thermistors — R/T characteristics and Steinhart–Hart application note',
-      ]);
+      ]));
   },
 };

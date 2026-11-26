@@ -1,6 +1,7 @@
 import { buck, boost } from '../engine/dcdc.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
-import { fixed, si, siHtml } from '../ui/format.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
+import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, rect, path, arrow, dimH, dimV, axes, wave } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
@@ -144,6 +145,52 @@ function diagram(v, u, r) {
   return svg(440, 240, b, t(boost ? 'dc_dgBoost' : 'dc_dgBuck'), { wide: true });
 }
 
+const fswOf = (v, u) => v.f * (u.f === 'MHz' ? 1e6 : 1e3);
+
+/**
+ * Calculation steps in the order of the TI application notes. The duty cycle
+ * is carried as a fraction (and shown once as a percentage); the ripple ratio
+ * and the efficiency appear as the percentages the reader typed.
+ */
+function worked(r, v, u) {
+  const q = (x, unit) => tx(si(x, unit));
+  const pct = (x) => tx(`${fmt(x, 4)} %`);
+  const Vin = q(v.vin, 'V');
+  const Vout = q(v.vout, 'V');
+  const Iout = q(v.iout, 'A');
+  const F = q(fswOf(v, u), 'Hz');
+  const dV = q(v.dv / 1000, 'V');
+  const dI = q(r.dI, 'A');
+  // 1 − D magnifies a rounded D at high step-up ratios, so D keeps five digits here.
+  const D = tx(fmt(r.duty, 5));
+  const duty = `${D} = ${tx(`${fixed(r.duty * 100, 1)} %`)}`;
+  const list = r.topology === 'buck' ? [
+    { label: 'dc_duty', sym: 'D = \\frac{V_{out}}{V_{in} \\cdot η}', num: `\\frac{${Vout}}{${Vin} \\cdot ${pct(v.eff)}}`, res: duty },
+    { label: 'dc_dI', sym: 'ΔI = r \\cdot I_{out}', num: `${pct(v.r)} \\cdot ${Iout}`, res: dI },
+    { label: 'dc_L', sym: 'L = \\frac{V_{out} \\cdot (V_{in} − V_{out})}{ΔI \\cdot f_{sw} \\cdot V_{in}}',
+      num: `\\frac{${Vout} \\cdot (${Vin} − ${Vout})}{${dI} \\cdot ${F} \\cdot ${Vin}}`, res: q(r.L, 'H') },
+    { label: 'dc_ipk', sym: 'I_{pk} = I_{out} + \\frac{ΔI}{2}', num: `${Iout} + \\frac{${dI}}{2}`, res: q(r.iPeak, 'A') },
+    { label: 'dc_Cout', sym: 'C_{out} = \\frac{ΔI}{8 \\cdot f_{sw} \\cdot ΔV_{out}}', num: `\\frac{${dI}}{8 \\cdot ${F} \\cdot ${dV}}`, res: q(r.cOutMin, 'F') },
+    { label: 'dc_esr', sym: 'ESR_{max} = \\frac{ΔV_{out}}{ΔI}', num: `\\frac{${dV}}{${dI}}`, res: q(r.esrMax, 'Ω') },
+    { label: 'dc_icin', sym: 'I_{Cin,rms} = I_{out} \\cdot \\sqrt{D \\cdot (1 − D)}', num: `${Iout} \\cdot \\sqrt{${D} \\cdot (1 − ${D})}`, res: q(r.iCinRms, 'A') },
+  ] : [
+    { label: 'dc_duty', sym: 'D = 1 − \\frac{V_{in} \\cdot η}{V_{out}}', num: `1 − \\frac{${Vin} \\cdot ${pct(v.eff)}}{${Vout}}`, res: duty },
+    { label: 'dc_iL', sym: 'I_L = \\frac{I_{out}}{1 − D}', num: `\\frac{${Iout}}{1 − ${D}}`, res: q(r.iL, 'A') },
+    { label: 'dc_dI', sym: 'ΔI = r \\cdot I_{out} \\cdot \\frac{V_{out}}{V_{in}}', num: `${pct(v.r)} \\cdot ${Iout} \\cdot \\frac{${Vout}}{${Vin}}`, res: dI },
+    { label: 'dc_L', sym: 'L = \\frac{V_{in} \\cdot (V_{out} − V_{in})}{ΔI \\cdot f_{sw} \\cdot V_{out}}',
+      num: `\\frac{${Vin} \\cdot (${Vout} − ${Vin})}{${dI} \\cdot ${F} \\cdot ${Vout}}`, res: q(r.L, 'H') },
+    { label: 'dc_ipk', sym: 'I_{pk} = I_L + \\frac{ΔI}{2}', num: `${q(r.iL, 'A')} + \\frac{${dI}}{2}`, res: q(r.iPeak, 'A') },
+    { label: 'dc_Cout', sym: 'C_{out} = \\frac{I_{out} \\cdot D}{f_{sw} \\cdot ΔV_{out}}', num: `\\frac{${Iout} \\cdot ${D}}{${F} \\cdot ${dV}}`, res: q(r.cOutMin, 'F') },
+    { label: 'dc_esr', sym: 'ESR_{max} = \\frac{ΔV_{out}}{I_{pk}}', num: `\\frac{${dV}}{${q(r.iPeak, 'A')}}`, res: q(r.esrMax, 'Ω') },
+  ];
+  return steps(list, {
+    note: 'dc_note',
+    where: [['V_{in}', 'dc_vin', 'vin'], ['V_{out}', 'dc_vout', 'vout'], ['I_{out}', 'dc_iout', 'iout'], ['f_{sw}', 'dc_fsw', 'f'],
+      ['r', 'dc_ripple', 'r'], ['η', 'dc_eff', 'eff'], ['ΔV_{out}', 'dc_dv', 'dv']],
+    refs: ['TI SLVA477', 'TI SLVA372'],
+  });
+}
+
 export default {
   diagram,
   id: 'dcdc',
@@ -176,16 +223,17 @@ export default {
 
   compute(v, u) {
     const p = {
-      vin: v.vin, vout: v.vout, iout: v.iout, fsw: v.f * (u.f === 'MHz' ? 1e6 : 1e3),
+      vin: v.vin, vout: v.vout, iout: v.iout, fsw: fswOf(v, u),
       ripple: v.r / 100, eff: v.eff / 100, dvout: v.dv / 1000,
     };
     return v.top === 'boost' ? boost(p) : buck(p);
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     return heroes([['dc_L', siHtml(r.L, 'H')], ['dc_Cout', siHtml(r.cOutMin, 'F')]])
       + messages('warn', r.warnings)
+      + worked(r, v, u)
       + block('results', rows([
         ['dc_duty', `${fixed(r.duty * 100, 1)} %`],
         ['dc_dI', si(r.dI, 'A')],
@@ -193,10 +241,6 @@ export default {
         ['dc_ipk', si(r.iPeak, 'A')],
         ['dc_esr', si(r.esrMax, 'Ω')],
         r.iCinRms !== undefined && ['dc_icin', si(r.iCinRms, 'A')],
-      ]))
-      + formulaBlock(r.topology === 'buck'
-        ? ['D = Vout / (Vin·η)', 'ΔI = r·Iout', 'L = Vout·(Vin − Vout) / (ΔI·fsw·Vin)', 'Cout ≥ ΔI / (8·fsw·ΔVout),  ESR ≤ ΔVout / ΔI', 'I_Cin,rms = Iout·√(D·(1 − D))']
-        : ['D = 1 − Vin·η / Vout', 'ΔI = r·Iout·Vout/Vin', 'L = Vin·(Vout − Vin) / (ΔI·fsw·Vout)', 'Cout ≥ Iout·D / (fsw·ΔVout)', 'I_pk = Iout/(1 − D) + ΔI/2'],
-      'dc_note', ['TI SLVA477', 'TI SLVA372']);
+      ]));
   },
 };

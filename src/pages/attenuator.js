@@ -1,6 +1,7 @@
 import { attenuatorValues, analyseAttenuator } from '../engine/attenuator.js';
 import { nearestStandard } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, path, arrow } from '../ui/svg.js';
@@ -32,6 +33,12 @@ const strings = {
     at_zin: 'Giriş empedansı',
     at_power: 'Güç kaybı',
     at_pmax: 'En çok ısınan direnç',
+    at_k: 'Gerilim oranı K',
+    at_rpPi: 'Çıkış paralel direnci ile yük (R1 ∥ Z₀)',
+    at_rpT: 'Paralel direnç ile çıkış tarafı (R2 ∥ (R1 + Z₀))',
+    at_stepStd: 'Seçilen serideki en yakın değerler; aşağıdaki çözümleme bu değerlerle yapılır.',
+    at_stepIl: 'Logaritmanın içi, yük geriliminin doğrudan bağlantıda oluşacak gerilime oranıdır (art arda iki gerilim bölücü).',
+    at_stepNodal: 'Va (giriş düğümü) ve Vb (çıkış düğümü, yük gerilimi), köprülü T’nin üç düğüm denkleminin Z₀ ardındaki VS = 2 V kaynak için çözülmesiyle bulunur; doğrudan bağlantı yükte 1 V verirdi.',
     at_note: 'Kaynak ve yük aynı Z₀ empedansındadır. Standart değerler seçildiğinde gerçek zayıflatma ve eşleşme devre analiziyle yeniden hesaplanır. Yüksek frekansta direnç gövdesinin parazitikleri (özellikle 0603 ve üstü) sonucu bozar; GHz bölgesinde ince film ve küçük kılıf kullanın.',
     warn_powerHigh: 'Bir dirençteki güç kaybı 1/10 W’ı aşıyor; direnç gücünü kontrol edin.',
     at_dgAria: '{top} zayıflatıcı, Z₀ kaynak ile Z₀ yük arasında',
@@ -64,6 +71,12 @@ const strings = {
     at_zin: 'Input impedance',
     at_power: 'Power dissipation',
     at_pmax: 'Hottest resistor',
+    at_k: 'Voltage ratio K',
+    at_rpPi: 'Output shunt in parallel with the load (R1 ∥ Z₀)',
+    at_rpT: 'Shunt in parallel with the output side (R2 ∥ (R1 + Z₀))',
+    at_stepStd: 'Nearest values of the selected series; the analysis below uses them.',
+    at_stepIl: 'The argument of the logarithm is the load voltage divided by the voltage a direct connection would give (two voltage dividers in a row).',
+    at_stepNodal: 'V_a (input node) and V_b (output node, the load voltage) come from solving the three node equations of the bridged T for a source V_S = 2 V behind Z₀; a direct connection would put 1 V on the load.',
     at_note: 'Source and load are both Z₀. When standard values are chosen, the actual attenuation and match are recomputed by circuit analysis. At high frequency the resistor body parasitics (especially 0603 and larger) degrade the result; use thin-film parts in small packages in the GHz range.',
     warn_powerHigh: 'A resistor dissipates more than 1/10 W; check its power rating.',
     at_dgAria: '{top} attenuator between a Z₀ source and a Z₀ load',
@@ -134,6 +147,74 @@ const LABELS = {
   bt: { r1: 'at_r1bt', r2: 'at_r2bt', r3: 'at_r3bt' },
 };
 
+/**
+ * Calculation steps: K, the exact resistors, the standard values chosen for
+ * them, then the analysis of the network with those values as the engine does
+ * it (voltage dividers for Pi and T, node equations for the bridged T).
+ */
+function worked(r, v) {
+  const L = LABELS[v.top];
+  const d = r.detail;
+  const n = (x, sig = 5) => tx(fmt(x, sig));
+  const ohm = (x, sig = 5) => tx(si(x, 'Ω', sig));
+  const dB = (x) => tx(`${fmt(x, 4)} dB`);
+  // Enough digits that K − 1 and Zin − Z0 keep their precision when worked by hand.
+  const digits = (x, min) => Math.min(12, Math.max(min, Math.floor(-Math.log10(Math.max(Math.abs(x), 1e-12))) + min));
+  const K = n(r.K, digits(r.K - 1, 7));
+  // With exact resistors Zin = Z0 (they are shown rounded, so five digits are all a reader can reproduce).
+  const zs = v.es !== 'exact' && Number.isFinite(r.returnLossDb) ? digits((r.zin - v.z0) / v.z0, 5) : 5;
+  const z0 = ohm(v.z0, zs);
+  const zin = ohm(r.zin, zs);
+  const rp = v.top === 'bt' ? '' : ohm(d.rp, zs);
+  const r1 = ohm(r.std.r1);
+  const r2 = ohm(r.std.r2);
+  const design = {
+    pi: [
+      { label: L.r1, sym: 'R_1 = Z_0 \\cdot \\frac{K + 1}{K − 1}', num: `${z0} \\cdot \\frac{${K} + 1}{${K} − 1}`, res: ohm(r.exact.r1) },
+      { label: L.r2, sym: 'R_2 = Z_0 \\cdot \\frac{K^{2} − 1}{2 K}', num: `${z0} \\cdot \\frac{{${K}}^{2} − 1}{2 \\cdot ${K}}`, res: ohm(r.exact.r2) },
+    ],
+    t: [
+      { label: L.r1, sym: 'R_1 = Z_0 \\cdot \\frac{K − 1}{K + 1}', num: `${z0} \\cdot \\frac{${K} − 1}{${K} + 1}`, res: ohm(r.exact.r1) },
+      { label: L.r2, sym: 'R_2 = Z_0 \\cdot \\frac{2 K}{K^{2} − 1}', num: `${z0} \\cdot \\frac{2 \\cdot ${K}}{{${K}}^{2} − 1}`, res: ohm(r.exact.r2) },
+    ],
+    bt: [
+      { label: L.r1, sym: 'R_1 = Z_0 \\cdot (K − 1)', num: `${z0} \\cdot (${K} − 1)`, res: ohm(r.exact.r1) },
+      { label: L.r2, sym: 'R_2 = \\frac{Z_0}{K − 1}', num: `\\frac{${z0}}{${K} − 1}`, res: ohm(r.exact.r2) },
+      { label: L.r3, sym: 'R_3 = Z_0', res: z0 },
+    ],
+  }[v.top];
+  const volt = (x) => tx(`${fmt(x, zs + 1)} V`);
+  const analysis = {
+    pi: [
+      { label: 'at_rpPi', sym: 'R_p = \\frac{R_1 \\cdot Z_0}{R_1 + Z_0}', num: `\\frac{${r1} \\cdot ${z0}}{${r1} + ${z0}}`, res: rp },
+      { label: 'at_zin', sym: 'Z_{in} = \\frac{R_1 \\cdot (R_2 + R_p)}{R_1 + R_2 + R_p}', num: `\\frac{${r1} \\cdot (${r2} + ${rp})}{${r1} + ${r2} + ${rp}}`, res: zin },
+      { label: 'at_il', sym: 'A = −20 \\cdot \\log_{10}(\\frac{2 Z_{in}}{Z_{in} + Z_0} \\cdot \\frac{R_p}{R_2 + R_p})',
+        num: `−20 \\cdot \\log_{10}(\\frac{2 \\cdot ${zin}}{${zin} + ${z0}} \\cdot \\frac{${rp}}{${r2} + ${rp}})`, res: dB(r.insertionLossDb), note: 'at_stepIl' },
+    ],
+    t: [
+      { label: 'at_rpT', sym: 'R_p = \\frac{R_2 \\cdot (R_1 + Z_0)}{R_2 + R_1 + Z_0}', num: `\\frac{${r2} \\cdot (${r1} + ${z0})}{${r2} + ${r1} + ${z0}}`, res: rp },
+      { label: 'at_zin', sym: 'Z_{in} = R_1 + R_p', num: `${r1} + ${rp}`, res: zin },
+      { label: 'at_il', sym: 'A = −20 \\cdot \\log_{10}(\\frac{2 R_p}{Z_{in} + Z_0} \\cdot \\frac{Z_0}{R_1 + Z_0})',
+        num: `−20 \\cdot \\log_{10}(\\frac{2 \\cdot ${rp}}{${zin} + ${z0}} \\cdot \\frac{${z0}}{${r1} + ${z0}})`, res: dB(r.insertionLossDb), note: 'at_stepIl' },
+    ],
+    bt: [
+      { label: 'at_zin', sym: 'Z_{in} = \\frac{V_a}{(V_S − V_a) / Z_0}', num: `\\frac{${volt(d.va)}}{(${volt(d.vs)} − ${volt(d.va)}) / ${z0}}`, res: zin, note: 'at_stepNodal' },
+      { label: 'at_il', sym: 'A = −20 \\cdot \\log_{10}(\\frac{V_b}{V_S / 2})', num: `−20 \\cdot \\log_{10}(\\frac{${volt(d.vb)}}{${volt(d.vs)} / 2})`, res: dB(r.insertionLossDb) },
+    ],
+  }[v.top];
+  // |Zin − Z0|: the larger value first, so the fraction is positive.
+  const [hi, lo] = r.zin >= v.z0 ? [zin, z0] : [z0, zin];
+  return steps([
+    { label: 'at_k', sym: 'K = 10^{A / 20}', num: `10^{\\frac{${tx(`${fmt(v.db, 6)} dB`)}}{20}}`, res: K },
+    ...design,
+    v.es !== 'exact' && { labelRaw: `${t('at_stdV')} (${v.es})`, sym: `R_1 \\to ${r1}, \\quad R_2 \\to ${r2}`, note: 'at_stepStd' },
+    ...analysis,
+    Number.isFinite(r.returnLossDb)
+      ? { label: 'at_rl', sym: 'RL = −20 \\cdot \\log_{10}|\\frac{Z_{in} − Z_0}{Z_{in} + Z_0}|', num: `−20 \\cdot \\log_{10}(\\frac{${hi} − ${lo}}{${zin} + ${z0}})`, res: dB(r.returnLossDb) }
+      : { label: 'at_rl', sym: 'Z_{in} = Z_0 \\to RL \\to ∞' },
+  ], { note: 'at_note', where: [['A', 'at_db', 'db'], ['Z_0', 'at_z0', 'z0']], refs: ['KiCad PCB Calculator — RF attenuators', 'Matched resistive attenuator design equations'] });
+}
+
 export default {
   diagram,
   id: 'attenuator',
@@ -156,7 +237,7 @@ export default {
   ],
 
   compute(v) {
-    const exact = attenuatorValues(v.top, v.db, v.z0);
+    const { K, ...exact } = attenuatorValues(v.top, v.db, v.z0);
     const std = {};
     for (const [k, x] of Object.entries(exact)) {
       std[k] = v.es === 'exact' || k === 'r3' ? x : nearestStandard(x, v.es).nearest;
@@ -165,7 +246,7 @@ export default {
     const pinW = 10 ** (v.p / 10) / 1000;
     const diss = Object.fromEntries(Object.entries(a.dissipationPerWatt).map(([k, x]) => [k, x * pinW]));
     const pmax = Math.max(...Object.values(diss));
-    return { ok: true, exact, std, ...a, diss, pmax, pinW, warnings: pmax > 0.1 ? ['powerHigh'] : [] };
+    return { ok: true, K, exact, std, ...a, diss, pmax, pinW, warnings: pmax > 0.1 ? ['powerHigh'] : [] };
   },
 
   render(r, v) {
@@ -178,17 +259,11 @@ export default {
       ['at_rl', `${Number.isFinite(r.returnLossDb) ? fixed(r.returnLossDb, 1) : '∞'} <span class="u">dB</span>`],
     ])
       + messages('warn', r.warnings)
+      + worked(r, v)
       + block('at_values', rows(valueRows))
       + block('results', rows([
         ['at_zin', `${fmt(r.zin, 5)} Ω`],
         ['at_pmax', `${si(r.pmax, 'W')} @ ${si(r.pinW, 'W')}`],
-      ]))
-      + formulaBlock([
-        'K = 10^(A/20)',
-        'Pi:  R1 = Z0·(K+1)/(K−1)     R2 = Z0·(K²−1)/(2K)',
-        'T:   R1 = Z0·(K−1)/(K+1)     R2 = Z0·2K/(K²−1)',
-        'Bridged-T:  R1 = Z0·(K−1)    R2 = Z0/(K−1)    R3 = Z0',
-        'Return loss = −20·log10|(Zin − Z0)/(Zin + Z0)|',
-      ], 'at_note', ['KiCad PCB Calculator — RF attenuators', 'Matched resistive attenuator design equations']);
+      ]));
   },
 };

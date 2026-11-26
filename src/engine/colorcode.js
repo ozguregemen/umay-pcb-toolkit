@@ -31,7 +31,10 @@ export function decode(bands) {
   if (tolPct === undefined) return { ok: false, errors: ['tolerance'] };
   const base = digits.reduce((a, c) => a * 10 + DIGIT[c], 0);
   const ohms = Number((base * mult).toPrecision(12));
-  const res = { ok: true, ohms, tolPct, min: ohms * (1 - tolPct / 100), max: ohms * (1 + tolPct / 100) };
+  const res = {
+    ok: true, ohms, tolPct, min: ohms * (1 - tolPct / 100), max: ohms * (1 + tolPct / 100),
+    digits: digits.map((c) => DIGIT[c]), mult, // the values read from the bands, for the calculation steps
+  };
   if (n === 6) res.tempco = TEMPCO[bands[5]];
   return res;
 }
@@ -45,22 +48,28 @@ export const EIA96_MULT = { Z: 0.001, Y: 0.01, R: 0.01, X: 0.1, S: 0.1, A: 1, B:
 
 /**
  * Decode an SMD resistor code. e96 = the E96 decade list (100…976) for EIA-96.
- * Returns { ok, ohms, kind } with kind '3', '4', 'eia96' or 'zero'.
+ * Returns { ok, ohms, kind } with kind '3', '4', 'eia96' or 'zero', plus how the
+ * code was read (for the calculation steps): `code` as normalised and `rule`
+ * 'eia96' (index, value, letter, mult), 'point' (R as decimal point) or
+ * 'digits' (digits, exp).
  */
 export function decodeSmd(code, e96) {
   const c = String(code).trim().toUpperCase().replace(/\s+/g, '');
-  if (/^0+$/.test(c)) return { ok: true, ohms: 0, kind: 'zero' };
+  if (/^0+$/.test(c)) return { ok: true, ohms: 0, kind: 'zero', code: c, rule: 'zero' };
   let m = c.match(/^(\d{2})([ZYRXSABHCDEF])$/);
   if (m && e96) {
     const i = Number(m[1]);
     if (i < 1 || i > 96) return { ok: false, errors: ['smd'] };
-    return { ok: true, ohms: Number((e96[i - 1] * EIA96_MULT[m[2]]).toPrecision(6)), kind: 'eia96' };
+    return {
+      ok: true, ohms: Number((e96[i - 1] * EIA96_MULT[m[2]]).toPrecision(6)), kind: 'eia96',
+      code: c, rule: 'eia96', index: m[1], value: e96[i - 1], letter: m[2], mult: EIA96_MULT[m[2]],
+    };
   }
   // R as decimal point: 4R7, R47, 10R0
   m = c.match(/^(\d*)R(\d*)$/);
-  if (m && (m[1] || m[2]) && c.length <= 4) return { ok: true, ohms: Number(`${m[1] || '0'}.${m[2] || '0'}`), kind: c.length === 4 ? '4' : '3' };
+  if (m && (m[1] || m[2]) && c.length <= 4) return { ok: true, ohms: Number(`${m[1] || '0'}.${m[2] || '0'}`), kind: c.length === 4 ? '4' : '3', code: c, rule: 'point' };
   m = c.match(/^(\d{2,3})(\d)$/);
-  if (m) return { ok: true, ohms: Number(m[1]) * 10 ** Number(m[2]), kind: c.length === 4 ? '4' : '3' };
+  if (m) return { ok: true, ohms: Number(m[1]) * 10 ** Number(m[2]), kind: c.length === 4 ? '4' : '3', code: c, rule: 'digits', digits: Number(m[1]), exp: Number(m[2]) };
   return { ok: false, errors: ['smd'] };
 }
 

@@ -156,6 +156,7 @@ export function lSolutions(zs, zl, w) {
       out.push({
         orient: 'shuntLoad', q: Math.abs(btot) / T.gl,
         parts: [part('series', 'series', -T.xs - z1.im, w, T.epsX), part('shunt', 'shuntLoad', btot - T.bl, w, T.epsB)],
+        detail: { gl: T.gl, bl: T.bl, btot }, // intermediates for the calculation steps
       });
     }
   }
@@ -169,6 +170,7 @@ export function lSolutions(zs, zl, w) {
       out.push({
         orient: 'shuntSrc', q: Math.abs(xtot) / T.rl,
         parts: [part('shunt', 'shuntSrc', T.bt - y1.im, w, T.epsB), part('series', 'series', xtot - T.xl, w, T.epsX)],
+        detail: { gt: T.gt, bt: T.bt, xtot },
       });
     }
   }
@@ -216,7 +218,8 @@ export function piNetwork(zs, zl, w, q, variant = 'lp') {
     part('series', 'series', x1 + x2, w, T.epsX),
     part('shunt', 'shuntLoad', btot2 - T.bl, w, T.epsB),
   ];
-  return { ok: true, q, qMin, rv, parts, type: classify(parts) };
+  // `detail`: intermediates for the calculation steps.
+  return { ok: true, q, qMin, rv, parts, type: classify(parts), detail: { rps: T.rps, rpl: T.rpl, rh, btot2, x2, x1 } };
 }
 
 /**
@@ -247,7 +250,8 @@ export function tNetwork(zs, zl, w, q, variant = 'lp') {
     part('shunt', 'shuntMid', b1 + b2, w, T.epsB),
     part('series', 'seriesLoad', xtot2 - T.xl, w, T.epsX),
   ];
-  return { ok: true, q, qMin, rv, parts, type: classify(parts) };
+  // `detail`: intermediates for the calculation steps.
+  return { ok: true, q, qMin, rv, parts, type: classify(parts), detail: { rsmall, rlarge, xtot2, b2, b1 } };
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +379,7 @@ export function matchNetwork({ fHz, zs, zl, topology = 'L', q = 3, variant = 'lp
     qMin: design.qMin ?? null,
     rv: design.rv ?? null,
     orient: design.orient ?? null,
+    detail: design.detail ?? null,
     solutions, pick,
     zin, zinStd,
     before, after, afterStd,

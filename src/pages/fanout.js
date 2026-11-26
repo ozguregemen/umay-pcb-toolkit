@@ -1,7 +1,8 @@
 import { fanout } from '../engine/fanout.js';
 import { toMm, fromMm } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages, invalid, checks } from '../ui/calculator.js';
-import { fixed, esc } from '../ui/format.js';
+import { heroes, rows, block, steps, messages, invalid, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
+import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
 import { svg, rect, circle, text, dimH, dimV, arrow, bar } from '../ui/svg.js';
@@ -215,11 +216,24 @@ export default {
   render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const mm = (k) => (Number.isFinite(v[k]) ? toMm(v[k], u[k]) : undefined);
+    // Values inside the calculation steps: mm, the unit of the engine, where the sums are
+    // exact (to the nanometre); imperial readers also get the results in mil.
+    const q = (x) => tx(`${fmt(Number(x.toFixed(6)), 12)} mm`);
+    const out = (x) => q(x) + (isImperial() ? ` = ${tx(`${fmt(fromMm(x, 'mil'), 4)} mil`)}` : '');
+    const [p, d, w, s] = ['p', 'd', 'w', 's'].map(mm);
     return heroes([
       ['fo_traces', `${r.traces}`],
       ['fo_diag', `${r.diagTraces}`],
     ])
       + messages('warn', r.warnings)
+      + steps([
+        { label: 'fo_gap', sym: 'g = p − d', num: `${q(p)} − ${q(d)}`, res: out(r.gap) },
+        { label: 'fo_traces', sym: 'n = \\max(0, ⌊(g − s) / (w + s)⌋)', num: `\\max(0, ⌊(${q(r.gap)} − ${q(s)}) / (${q(w)} + ${q(s)})⌋)`, res: `${r.traces}` },
+        r.maxTrace > 0 && { label: 'fo_maxTrace', sym: 'w_{max} = g − 2 s', num: `${q(r.gap)} − 2 \\cdot ${q(s)}`, res: out(r.maxTrace) },
+        { label: 'fo_diagGap', sym: 'g_d = \\sqrt{2} \\cdot p − d', num: `\\sqrt{2} \\cdot ${q(p)} − ${q(d)}`, res: out(r.diagGap) },
+        { label: 'fo_diag', sym: 'n_d = \\max(0, ⌊(g_d − s) / (w + s)⌋)', num: `\\max(0, ⌊(${q(r.diagGap)} − ${q(s)}) / (${q(w)} + ${q(s)})⌋)`, res: `${r.diagTraces}` },
+        r.maxViaPad > 0 && { label: 'fo_maxVia', sym: 'D_{via} = g_d − 2 s', num: `${q(r.diagGap)} − 2 \\cdot ${q(s)}`, res: out(r.maxViaPad) },
+      ], { note: 'fo_note', where: [['p', 'fo_pitch', 'p'], ['d', 'fo_pad', 'd'], ['w', 'fo_trace', 'w'], ['s', 'fo_space', 's']], refs: ['IPC-7351 (BGA land patterns)'] })
       + block('results', rows([
         ['fo_gap', L(r.gap)],
         ['fo_maxTrace', r.maxTrace > 0 ? L(r.maxTrace) : '—'],
@@ -229,11 +243,6 @@ export default {
       ]))
       + (r.viaFits !== undefined ? block('fo_checks', checks([[r.viaFits, esc(t('fo_viaOk'))]])) : '')
       // Fab check: escape traces on an outer 1 oz layer and the dog-bone via pad.
-      + fabCheck({ traceMm: mm('w'), spaceMm: mm('s'), oz: 1, viaPadMm: mm('v') }, { note: t('fab_n1oz') })
-      + formulaBlock([
-        'gap = pitch − pad,   diagonal gap = pitch·√2 − pad',
-        'n = floor((gap − s) / (w + s))',
-        'w_max = gap − 2s,   via pad_max = pitch·√2 − pad − 2s',
-      ], 'fo_note', ['IPC-7351 (BGA land patterns)']);
+      + fabCheck({ traceMm: mm('w'), spaceMm: mm('s'), oz: 1, viaPadMm: mm('v') }, { note: t('fab_n1oz') });
   },
 };

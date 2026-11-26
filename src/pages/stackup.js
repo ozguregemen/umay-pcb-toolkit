@@ -9,7 +9,8 @@ import {
   defaultPreset, presetStack, analyzeStackup, isPlane, DIFF_TARGETS, SE_TARGET,
 } from '../engine/stackup.js';
 import { fabById, traceSpaceRule, umToOz } from '../engine/fabs.js';
-import { heroes, rows, block, formulaBlock, messages, invalid, checks, parseNumber } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid, checks, parseNumber } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial, getPref } from '../prefs.js';
@@ -93,6 +94,27 @@ const strings = {
     su_dgNoRef: 'referans yok',
     su_dgTotal: 'Toplam {v} · hedef {t} ± %{tol}',
     su_note: 'Kapalı formüller yaklaşıktır (±%5–10); sipariş öncesi üreticinin alan çözücüsüyle doğrulayın. Lehim maskesi microstrip empedansını birkaç ohm düşürür ve hesaba katılmamıştır. Aradaki sinyal katmanının bakırı, büyük ölçüde aşındırıldığı için dielektrik sayılır. Prepreg kalınlığı komşu katmanların bakır oranına bağlıdır; üreticinin presleme sonrası değerini kullanın. Simetri ölçütü: aynalanan katmanlarda bakır farkı ≤ %10, dielektrik kalınlık farkı ≤ %5, εr farkı ≤ 0,1.',
+    su_stepH: 'İzden referans düzleme mesafe',
+    su_stepH1: 'Alt düzleme mesafe',
+    su_stepH2: 'Üst düzleme mesafe',
+    su_stepC: 'İzin diğer yanındaki dielektrik örtü (kart yüzeyine kadar)',
+    su_stepEr: 'Kapsanan dielektriklerin kalınlık ağırlıklı εr ortalaması',
+    su_stepU: 'Genişlik / yükseklik oranı (kalınlık düzeltmeli)',
+    su_stepEe: 'Empedans hesabındaki etkin dielektrik sabiti εe',
+    su_stepZ01: 'Aynı hattın havadaki empedansı',
+    su_stepMs: 'Örtüsüz microstrip (Hammerstad–Jensen)',
+    su_stepEeff: 'Etkin dielektrik sabiti εeff',
+    su_stepZs: 'Tek düzlem aralığı için simetrik stripline (Wheeler)',
+    su_stepZ0: 'Karakteristik empedans Z₀',
+    su_stepZd: 'Diferansiyel empedans Zdiff',
+    su_stepW: '{z} için iz genişliği',
+    su_stepExample: 'Referans düzlemi olan ilk sinyal katmanı örnek olarak adım adım gösterilir; diğer katmanlar kendi yapıları, h ve εr değerleriyle aynı yoldan hesaplanır (aşağıdaki tablo).',
+    su_stepSolved: 'Genişlik, Z₀(w) hedefe eşit olacak şekilde sayısal olarak (ikiye bölme yöntemiyle) bulunur; diferansiyel hedeflerde aynı arama Zdiff(w, s) üzerinde yapılır.',
+    su_wTi: 'i. katmanın bakır kalınlığı',
+    su_wHj: 'j. dielektriğin kalınlığı',
+    su_wEj: 'j. dielektriğin dielektrik sabiti',
+    su_wT: 'İz katmanının bakır kalınlığı',
+    su_wB: 'Düzlemler arası mesafe: h₁ + h₂ + t',
     err_su_layers: 'Katman sayısı 2, 4, 6, 8 veya 10 olmalı.',
     err_su_cu: 'Her bakır kalınlığı sıfırdan büyük olmalı.',
     err_su_diel: 'Her dielektrik kalınlığı sıfırdan büyük olmalı.',
@@ -183,6 +205,27 @@ const strings = {
     su_dgNoRef: 'no reference',
     su_dgTotal: 'Total {v} · target {t} ± {tol} %',
     su_note: 'The closed-form models are approximate (±5–10 %); confirm with the fabricator’s field solver before ordering. Solder mask lowers microstrip impedance by a few ohms and is not included. Copper of an intermediate signal layer counts as dielectric, since it is mostly etched away. Prepreg thickness depends on the copper density of the neighbouring layers; use the fabricator’s pressed value. Symmetry criterion: on mirrored layers copper differs ≤ 10 %, dielectric thickness ≤ 5 %, εr ≤ 0.1.',
+    su_stepH: 'Distance from the trace to the reference plane',
+    su_stepH1: 'Distance to the plane below',
+    su_stepH2: 'Distance to the plane above',
+    su_stepC: 'Dielectric cover on the other side of the trace (up to the board surface)',
+    su_stepEr: 'Thickness-weighted εr of the dielectrics spanned',
+    su_stepU: 'Width-to-height ratio (thickness-corrected)',
+    su_stepEe: 'Effective dielectric constant used for the impedance, εe',
+    su_stepZ01: 'Impedance of the same line in air',
+    su_stepMs: 'Microstrip without cover (Hammerstad–Jensen)',
+    su_stepEeff: 'Effective dielectric constant εeff',
+    su_stepZs: 'Symmetric stripline for one plane spacing (Wheeler)',
+    su_stepZ0: 'Characteristic impedance Z₀',
+    su_stepZd: 'Differential impedance Zdiff',
+    su_stepW: 'Trace width for {z}',
+    su_stepExample: 'The first signal layer that has a reference plane is worked as an example; the other layers follow the same way with their own structure, h and εr (table below).',
+    su_stepSolved: 'The width is found numerically (by bisection) so that Z₀(w) equals the target; for the differential targets the same search runs on Zdiff(w, s).',
+    su_wTi: 'Copper thickness of layer i',
+    su_wHj: 'Thickness of dielectric j',
+    su_wEj: 'Dielectric constant of dielectric j',
+    su_wT: 'Copper thickness of the trace layer',
+    su_wB: 'Plane-to-plane spacing: h₁ + h₂ + t',
     err_su_layers: 'The layer count must be 2, 4, 6, 8 or 10.',
     err_su_cu: 'Every copper thickness must be greater than zero.',
     err_su_diel: 'Every dielectric thickness must be greater than zero.',
@@ -432,6 +475,117 @@ function drawStack(st, r) {
 }
 
 // ---------------------------------------------------------------------------
+// Calculation steps
+// ---------------------------------------------------------------------------
+
+/**
+ * The thickness sums, then the impedance of the first signal layer that has a
+ * reference plane, worked as an example with the intermediate values of its
+ * model (s.detail). The other layers follow the same way; the table has them.
+ * Values are in the units of the engine, where the sums are exact: copper in
+ * µm, everything else in mm (imperial readers also get the results in mil).
+ */
+function worked(r, st, refs) {
+  // Intermediate values carry six digits, Z0 five and Zdiff four, so each result reproduces by hand.
+  const n = (x, sig = 6) => fmt(x, sig);
+  const len = (mm) => tx(`${fmt(Number(mm.toFixed(6)), 12)} mm`);
+  const cu = (um) => tx(`${fmt(Number(um.toFixed(3)), 12)} µm`);
+  const mil = (mm) => (isImperial() ? ` = ${tx(`${fmt(mm / MIL, 4)} mil`)}` : '');
+  const Z = (x, sig = 6) => tx(`${fmt(x, sig)} Ω`);
+  const th = r.thickness;
+  const list = [
+    { label: 'su_cuTotal', sym: 't_{Cu} = ∑ t_i', num: st.cuUm.map(cu).join(' + '), res: len(th.cuTotal) },
+    { label: 'su_dielTotal', sym: 'h_{diel} = ∑ h_j', num: st.diel.length > 1 ? st.diel.map((d) => len(d.h)).join(' + ') : undefined, res: len(th.dielTotal) },
+    { label: 'su_total', sym: 't_{total} = t_{Cu} + h_{diel}', num: `${len(th.cuTotal)} + ${len(th.dielTotal)}`, res: len(th.totalMm) + mil(th.totalMm) },
+  ];
+  const where = [['t_i', 'su_wTi'], ['h_j', 'su_wHj']];
+
+  const s = r.signals.find((x) => x.z0 !== undefined);
+  if (s) {
+    const d = s.detail;
+    const first = list.length;
+    // Step labels carry the layer; the first one also names its structure.
+    let named = false;
+    const name = (key, vars) => {
+      const head = named ? Ln(s.i) : `${Ln(s.i)} ${t(`su_st_${s.structure}`)}`;
+      named = true;
+      return `${head} · ${t(key, vars)}`;
+    };
+    const w = len(st.wMm);
+    const gap = len(st.sMm);
+    const tCu = cu(st.cuUm[s.i]);
+    const er = n(s.er);
+    // Distance between copper layers a < b: the dielectrics and the copper layers in between.
+    const span = (a, b, key, sym, value) => (b - a > 1) && {
+      labelRaw: name(key), sym: `${sym} = ∑ h_j + ∑ t_i`,
+      num: st.diel.slice(a, b).flatMap((x, k) => (k ? [cu(st.cuUm[a + k]), len(x.h)] : [len(x.h)])).join(' + '), res: len(value),
+    };
+    // εr of dielectrics a … b − 1 (a plain value when they are all the same material).
+    const mean = (a, b) => {
+      const ds = st.diel.slice(a, b);
+      if (!ds.some((x) => Math.abs(x.er - ds[0].er) > 1e-12)) return false;
+      where.push(['ε_j', 'su_wEj']);
+      return {
+        labelRaw: name('su_stepEr'), sym: 'ε_r = \\frac{∑ h_j \\cdot ε_j}{∑ h_j}',
+        num: `\\frac{${ds.map((x) => `${len(x.h)} \\cdot ${n(x.er)}`).join(' + ')}}{${ds.map((x) => len(x.h)).join(' + ')}}`, res: er,
+      };
+    };
+    const diffMs = () => ({ labelRaw: name('su_stepZd'), sym: `Z_{diff} = 2 Z_0 (1 − ${n(0.48)} \\cdot e^{−${n(0.96)} s / h})`,
+      num: `2 \\cdot ${Z(s.z0, 5)} \\cdot (1 − ${n(0.48)} \\cdot e^{−${n(0.96)} \\cdot \\frac{${gap}}{${len(s.h)}}})`, res: Z(s.zdiff, 4) });
+    where.push(['w', 'su_w'], ['s', 'su_s']);
+
+    if (s.structure === 'microstrip') {
+      const [a, b] = s.dn !== null ? [s.i, s.dn] : [s.up, s.i];
+      list.push(
+        span(a, b, 'su_stepH', 'h', s.h),
+        mean(a, b),
+        { labelRaw: name('su_stepU'), sym: 'u = \\frac{w}{h} + Δu_t', num: `\\frac{${w}}{${len(s.h)}} + ${n(d.ur - d.u)}`, res: n(d.ur) },
+        { labelRaw: name('su_stepEe'), sym: 'ε_e = \\frac{ε_r + 1}{2} + \\frac{ε_r − 1}{2} \\cdot (1 + \\frac{10}{u})^{−a b}',
+          num: `\\frac{${er} + 1}{2} + \\frac{${er} − 1}{2} \\cdot (1 + \\frac{10}{${n(d.ur)}})^{−${n(d.ab)}}`, res: n(d.ee) },
+        { labelRaw: name('su_stepZ01'), sym: `F = 6 + (2π − 6) \\cdot e^{−(${n(30.666)} / u)^{${n(0.7528)}}}, \\quad Z_{01} = \\frac{η_0}{2π} \\ln(\\frac{F}{u} + \\sqrt{1 + \\frac{4}{u^{2}}})`, res: Z(d.z01) },
+        { labelRaw: name('su_stepZ0'), sym: 'Z_0 = \\frac{Z_{01}}{\\sqrt{ε_e}}', num: `\\frac{${Z(d.z01)}}{\\sqrt{${n(d.ee)}}}`, res: Z(s.z0, 5) },
+        diffMs(),
+      );
+      where.push(['h', 'su_stepH']);
+    } else if (s.structure === 'embedded') {
+      const below = s.dn !== null;
+      const last = st.roles.length - 1;
+      const [a, b] = below ? [s.i, s.dn] : [s.up, s.i];
+      list.push(
+        span(a, b, 'su_stepH', 'h', s.h),
+        below ? span(0, s.i, 'su_stepC', 'c', s.c) : span(s.i, last, 'su_stepC', 'c', s.c),
+        below ? mean(0, s.dn) : mean(s.up, last),
+        { labelRaw: name('su_stepMs'), sym: 'Z_{0,ms}', res: `${Z(d.z0ms)}, \\quad ε_{eff,ms} = ${n(d.eeMs)}` },
+        { labelRaw: name('su_stepEeff'), sym: `ε_{eff} = ε_r − (ε_r − ε_{eff,ms}) \\cdot e^{−${n(1.55)} c / h}`,
+          num: `${er} − (${er} − ${n(d.eeMs)}) \\cdot e^{−${n(1.55)} \\cdot \\frac{${len(s.c)}}{${len(s.h)}}}`, res: n(d.erEff) },
+        { labelRaw: name('su_stepZ0'), sym: 'Z_0 = Z_{0,ms} \\cdot \\sqrt{\\frac{ε_{eff,ms}}{ε_{eff}}}', num: `${Z(d.z0ms)} \\cdot \\sqrt{\\frac{${n(d.eeMs)}}{${n(d.erEff)}}}`, res: Z(s.z0, 5) },
+        diffMs(),
+      );
+      where.push(['h', 'su_stepH'], ['c', 'su_stepC']);
+    } else {
+      // Stripline, symmetric or not: two symmetric striplines in parallel.
+      list.push(
+        span(s.i, s.dn, 'su_stepH1', 'h_1', s.h1),
+        span(s.up, s.i, 'su_stepH2', 'h_2', s.h2),
+        mean(s.up, s.dn),
+        { labelRaw: name('su_stepZs'), sym: 'Z_1 = Z_s(b = 2 h_1 + t)', num: `Z_s(b = 2 \\cdot ${len(s.h1)} + ${tCu})`, res: Z(d.z1) },
+        { labelRaw: name('su_stepZs'), sym: 'Z_2 = Z_s(b = 2 h_2 + t)', num: `Z_s(b = 2 \\cdot ${len(s.h2)} + ${tCu})`, res: Z(d.z2) },
+        { labelRaw: name('su_stepZ0'), sym: 'Z_0 = \\frac{2 Z_1 Z_2}{Z_1 + Z_2}', num: `\\frac{2 \\cdot ${Z(d.z1)} \\cdot ${Z(d.z2)}}{${Z(d.z1)} + ${Z(d.z2)}}`, res: Z(s.z0, 5) },
+        { labelRaw: name('su_stepZd'), sym: `Z_{diff} = 2 Z_0 (1 − ${n(0.374)} \\cdot e^{−${n(2.9)} s / b})`,
+          num: `2 \\cdot ${Z(s.z0, 5)} \\cdot (1 − ${n(0.374)} \\cdot e^{−${n(2.9)} \\cdot \\frac{${gap}}{${len(s.b)}}})`, res: Z(s.zdiff, 4) },
+      );
+      where.push(['h_1', 'su_stepH1'], ['h_2', 'su_stepH2'], ['t', 'su_wT'], ['b', 'su_wB']);
+    }
+    if (s.w50 > 0) {
+      list.push({ labelRaw: name('su_stepW', { z: `${SE_TARGET} Ω` }), sym: `Z_0(w) = ${tx(`${SE_TARGET} Ω`)} \\to w`, res: tx(`${fmt(s.w50, 4)} mm`) + mil(s.w50), note: 'su_stepSolved' });
+    }
+    // Say once, on the first step of the layer, that it is an example.
+    list.slice(first).find(Boolean).note = 'su_stepExample';
+  }
+  return steps(list, { note: 'su_note', where, refs });
+}
+
+// ---------------------------------------------------------------------------
 // Results
 // ---------------------------------------------------------------------------
 
@@ -521,20 +675,7 @@ function render(r, st) {
 
   const refs = ['Hammerstad & Jensen, IEEE MTT-S 1980', 'Wheeler, IEEE T-MTT 1978', 'J. Mears, National AN-905 (1996)', 'IPC-2141A', 'IPC-6012F',
     'JLCPCB, jlcpcb.com/impedance (2026-11-25)', 'PCBWay, pcbway.com/multi-layer-laminated-structure.html (2026-11-25)'];
-  const formula = formulaBlock([
-    't_total = Σ t_Cu + Σ h_diel',
-    'h (trace → plane) = Σ h_diel + Σ t_Cu (layers in between)',
-    'εr = Σ (h·εr) / Σ h   (dielectrics spanned)',
-    'microstrip:  Hammerstad–Jensen (w, t, h, εr)',
-    'stripline:   Wheeler 1978,  b = h1 + h2 + t',
-    'asym.:       Z0 = 2·Zs(2h1+t)·Zs(2h2+t) / (Zs(2h1+t) + Zs(2h2+t))',
-    'embedded:    εeff(c) = εr − (εr − εeff,ms)·e^(−1.55·c/h)',
-    'Zdiff ≈ 2·Z0·(1 − 0.48·e^(−0.96·s/h))     (microstrip)',
-    'Zdiff ≈ 2·Z0·(1 − 0.374·e^(−2.9·s/b))     (stripline)',
-    `w(Z) : Z(w) = ${SE_TARGET} Ω  /  Zdiff(w, s) = ${DIFF_TARGETS.join(' / ')} Ω   (bisection)`,
-  ], 'su_note', refs);
-
-  return { top: main + chk, rest: messages('warn', warn, vars) + table + thick + fabBlock + formula };
+  return { top: main + chk, rest: messages('warn', warn, vars) + worked(r, st, refs) + table + thick + fabBlock };
 }
 
 // ---------------------------------------------------------------------------

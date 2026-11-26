@@ -1,6 +1,7 @@
 import { crosstalk, nextLengthFactor } from '../engine/signal.js';
 import { toMm, fromMm } from '../engine/units.js';
-import { hero, rows, block, formulaBlock, checks } from '../ui/calculator.js';
+import { hero, rows, block, steps, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -29,6 +30,7 @@ const strings = {
     xt_swing: 'Saldırgan sinyal genliği',
     xt_target: 'Hedef karışma',
     xt_result: 'Yakın uç karışma (NEXT) tahmini',
+    xt_db: 'Desibel olarak',
     xt_D: 'Merkezden merkeze mesafe (D)',
     xt_H: 'Etkin yükseklik (H)',
     xt_dh: 'D / H',
@@ -65,6 +67,7 @@ const strings = {
     xt_swing: 'Aggressor signal swing',
     xt_target: 'Target crosstalk',
     xt_result: 'Near-end crosstalk (NEXT) estimate',
+    xt_db: 'In decibels',
     xt_D: 'Centre-to-centre distance (D)',
     xt_H: 'Effective height (H)',
     xt_dh: 'D / H',
@@ -157,6 +160,54 @@ const LEN = ['mm', 'mil', 'um'];
 const len = (mm) => (isImperial() ? `${fixed(fromMm(mm, 'mil'), 2)} mil` : `${fixed(mm, 3)} mm`);
 const isStrip = (v) => v.st === 'strip';
 
+/**
+ * Calculation steps, in mm like the engine (typed values are exact there,
+ * whatever unit they were entered in); the length factor K needs L in mm and
+ * t_r in ns to go with c in mm/ns. Intermediate values carry more digits than
+ * the results so that the results reproduce by hand.
+ */
+function worked(r, v, u) {
+  const q = (mm) => tx(`${fmt(Number(mm.toFixed(6)), 12)} mm`); // typed lengths and their sums
+  const n = (x) => tx(fmt(x, 5));
+  const strip = isStrip(v);
+  const byLen = v.km === 'len';
+  const K = n(r.k);
+  const X = n(r.fraction);
+  const H = strip ? tx(`${fmt(r.H, 6)} mm`) : q(r.H);
+  const ha = toMm(v.h, u.h);
+  const hb = strip ? toMm(v.h2, u.h2) : NaN;
+  const kFrac = byLen
+    ? `\\frac{2 \\cdot ${q(toMm(v.L, u.L))} \\cdot \\sqrt{${n(v.er)}}}{${tx(`${fmt(299.792458, 6)} mm/ns`)} \\cdot ${tx(`${fmt(v.tr * (u.tr === 'ps' ? 1e-3 : 1), 6)} ns`)}}`
+    : '';
+  const hasReq = r.requiredGapMm !== undefined;
+  const clamp = hasReq && r.requiredGapMm === 0; // the target is met even with touching traces
+  const reqSym = 'H \\cdot \\sqrt{\\frac{K}{X_{target}} − 1} − w';
+  const reqNum = hasReq ? `${H} \\cdot \\sqrt{\\frac{${K}}{${n(r.targetPct / 100)}} − 1} − ${q(r.w)}` : '';
+  const reqRes = hasReq ? tx(`${fmt(r.requiredGapMm, 4)} mm`) + (isImperial() ? ` = ${tx(`${fmt(fromMm(r.requiredGapMm, 'mil'), 4)} mil`)}` : '') : '';
+  return steps([
+    byLen && { label: 'xt_kUsed', sym: 'K = \\min(1, \\frac{2 \\cdot L \\cdot \\sqrt{ε_{eff}}}{c \\cdot t_r})',
+      num: r.k < 1 ? kFrac : `\\min(1, ${kFrac})`, res: K },
+    { label: 'xt_D', sym: 'D = s + w', num: `${q(toMm(v.s, u.s))} + ${q(r.w)}`, res: q(r.D) },
+    strip && { label: 'xt_H', sym: 'H = \\frac{H_a \\cdot H_b}{H_a + H_b}', num: `\\frac{${q(ha)} \\cdot ${q(hb)}}{${q(ha)} + ${q(hb)}}`, res: H },
+    { label: 'xt_result', sym: 'X = \\frac{K}{1 + (\\frac{D}{H})^{2}}', num: `\\frac{${K}}{1 + (\\frac{${q(r.D)}}{${H}})^{2}}`,
+      res: `${X} = ${tx(`${fixed(r.fraction * 100, 2)} %`)}` },
+    { label: 'xt_db', sym: 'X_{dB} = 20 \\cdot \\log_{10}(X)', num: `20 \\cdot \\log_{10}(${X})`, res: tx(`${fmt(r.db, 4).replace('-', '−')} dB`) },
+    r.noiseV !== undefined && { label: 'xt_noise', sym: 'V_{noise} = X \\cdot V_{swing}', num: `${X} \\cdot ${tx(si(v.V, 'V'))}`, res: tx(si(r.noiseV, 'V')) },
+    hasReq && { label: 'xt_required', sym: `s_{req} = ${clamp ? `\\max(0, ${reqSym})` : reqSym}`,
+      num: clamp ? `\\max(0, ${reqNum})` : reqNum, res: reqRes },
+  ], {
+    note: 'xt_note',
+    where: [
+      ['s', 'xt_gap', 's'], ['w', 'xt_w', 'w'],
+      !strip && ['H', 'xt_h', 'h'], strip && ['H_a', 'xt_h1', 'h'], strip && ['H_b', 'xt_h2', 'h2'],
+      v.km === 'worst' && ['K', 'xt_kWorst', 'km'], v.km === 'man' && ['K', 'xt_kMode', 'k'],
+      byLen && ['L', 'xt_len', 'L'], byLen && ['t_r', 'xt_tr', 'tr'], byLen && ['ε_{eff}', 'xt_er', 'er'],
+      r.noiseV !== undefined && ['V_{swing}', 'xt_swing', 'V'], hasReq && ['X_{target}', 'xt_target', 'tg'],
+    ],
+    refs: ['H. Johnson & M. Graham, High-Speed Digital Design (1993), p. 192', 'D. Brooks, “Crosstalk Part 2”, Printed Circuit Design (1997)'],
+  });
+}
+
 export default {
   diagram,
   id: 'crosstalk',
@@ -209,10 +260,11 @@ export default {
     };
   },
 
-  render(r) {
+  render(r, v, u) {
     const main = hero('xt_result', `${fixed(r.fraction * 100, 2)} <span class="u">%</span>`, `${fixed(r.db, 1)} dB`);
     const meets = r.targetPct > 0 ? r.fraction * 100 <= r.targetPct : null;
     return main
+      + worked(r, v, u)
       + block('results', rows([
         ['xt_D', len(r.D)],
         ['xt_H', len(r.H)],
@@ -224,11 +276,6 @@ export default {
       + block('xt_rules', checks([
         [r.threeW, esc(t('xt_3w')), `${fmt(r.D / r.w, 3)} w`],
         meets !== null && [meets, esc(t('xt_target_ok')), `${fixed(r.targetPct, 1)} %`],
-      ]))
-      + formulaBlock([
-        'D = s + w;   stripline: H = Ha·Hb / (Ha + Hb)',
-        'X_NEXT ≈ K / (1 + (D/H)²),   K = min(1, 2·L·√εeff / (c·tr))',
-        'D_req = H · √(K / X_target − 1)',
-      ], 'xt_note', ['H. Johnson & M. Graham, High-Speed Digital Design (1993), p. 192', 'D. Brooks, “Crosstalk Part 2”, Printed Circuit Design (1997)']);
+      ]));
   },
 };

@@ -1,6 +1,7 @@
 import { planarInductor, coilTuning, SHAPES } from '../engine/inductor.js';
 import { toMm } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, siHtml, esc } from '../ui/format.js';
 import { svg, rect, circle, text, dimH, twoTerm, wire, node, block as icBlock } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -22,6 +23,9 @@ const strings = {
     pi_fill: 'Doluluk oranı (ρ)',
     pi_len: 'Toplam iz uzunluğu (yaklaşık)',
     pi_rdc: 'DC direnç (25 °C)',
+    pi_kp: 'Şeklin çevre / çap oranı (kare 4 · altıgen 2√3 · sekizgen 8·tan(π/8) · daire π)',
+    pi_coef: 'Şekle bağlı katsayılar (Mohan ve ark.)',
+    pi_rhoCu: 'Bakırın özdirenci (25 °C)',
     pi_note: 'Mohan ve arkadaşlarının (1999) ifadeleri, ölçümlerle tipik olarak %2–3 içinde uyumludur. Spiralin altındaki/üstündeki bakır düzlemler (girdap akımları) endüktansı belirgin biçimde düşürür; spiralin altında düzlem bırakmayın. İç uçtan dışarı çıkış için bir köprü (via + alt katman) gerekir.',
     pi_tuneTitle: 'Rezonans ayarı (NFC / RFID / kablosuz güç)',
     pi_f: 'Hedef rezonans frekansı',
@@ -70,6 +74,9 @@ const strings = {
     pi_fill: 'Fill ratio (ρ)',
     pi_len: 'Total trace length (approx.)',
     pi_rdc: 'DC resistance (25 °C)',
+    pi_kp: 'Perimeter / diameter of the shape (square 4 · hexagon 2√3 · octagon 8·tan(π/8) · circle π)',
+    pi_coef: 'Shape-dependent coefficients (Mohan et al.)',
+    pi_rhoCu: 'Resistivity of copper (25 °C)',
     pi_note: 'The expressions by Mohan et al. (1999) typically agree with measurements within 2–3 %. Copper planes above or below the spiral (eddy currents) lower the inductance markedly; keep planes away from under the spiral. Bringing out the inner end needs a bridge (via + other layer).',
     pi_tuneTitle: 'Resonant tuning (NFC / RFID / wireless power)',
     pi_f: 'Target resonant frequency',
@@ -247,13 +254,41 @@ export default {
     return r;
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
+    // Calculation steps: lengths in mm (what the engine works in); µ0 = 4π·10⁻⁷ H/m is shown as 1.2566 µH/m.
+    const q = (x, unit, sig = 4) => tx(`${fmt(x, sig)} ${unit}`);
+    const mm = (x) => q(x, 'mm', 6); // diameters are subtracted from each other: keep their digits
+    const ohm = (x) => tx(si(x, 'Ω'));
+    const MU0 = q(0.4 * Math.PI, 'µH/m', 5);
+    const n = fmt(v.n, 4);
+    const w = toMm(v.w, u.w);
+    const s = toMm(v.s, u.s);
+    const d = toMm(v.d, u.d);
+    const k = r.coef;
+    const rho = tx(fmt(r.fill, 4));
     let html = heroes([
       ['pi_lSheet', siHtml(r.lSheet, 'H')],
       r.lWheeler && ['pi_lWheeler', siHtml(r.lWheeler, 'H')],
     ])
       + messages('warn', r.warnings)
+      + steps([
+        { label: 'pi_din', sym: 'd_{in} = d_{out} − 2 \\cdot n \\cdot w − 2 \\cdot (n − 1) \\cdot s',
+          num: `${mm(d)} − 2 \\cdot ${n} \\cdot ${mm(w)} − 2 \\cdot (${n} − 1) \\cdot ${mm(s)}`, res: mm(r.dInMm) },
+        { label: 'pi_davg', sym: 'd_{avg} = \\frac{d_{out} + d_{in}}{2}', num: `\\frac{${mm(d)} + ${mm(r.dInMm)}}{2}`, res: mm(r.dAvgMm) },
+        { label: 'pi_fill', sym: 'ρ = \\frac{d_{out} − d_{in}}{d_{out} + d_{in}}',
+          num: `\\frac{${mm(d)} − ${mm(r.dInMm)}}{${mm(d)} + ${mm(r.dInMm)}}`, res: rho },
+        { label: 'pi_lSheet', sym: 'L = \\frac{µ_0 \\cdot n^{2} \\cdot d_{avg} \\cdot c_1}{2} \\cdot (\\ln\\frac{c_2}{ρ} + c_3 \\cdot ρ + c_4 \\cdot ρ^{2})',
+          num: `\\frac{${MU0} \\cdot {${n}}^{2} \\cdot ${mm(r.dAvgMm)} \\cdot ${fmt(k.c1)}}{2} \\cdot (\\ln\\frac{${fmt(k.c2)}}{${rho}} + ${fmt(k.c3)} \\cdot ${rho} + ${fmt(k.c4)} \\cdot {${rho}}^{2})`,
+          res: tx(si(r.lSheet, 'H')) },
+        r.lWheeler && { label: 'pi_lWheeler', sym: 'L_W = \\frac{K_1 \\cdot µ_0 \\cdot n^{2} \\cdot d_{avg}}{1 + K_2 \\cdot ρ}',
+          num: `\\frac{${fmt(k.k1)} \\cdot ${MU0} \\cdot {${n}}^{2} \\cdot ${mm(r.dAvgMm)}}{1 + ${fmt(k.k2)} \\cdot ${rho}}`, res: tx(si(r.lWheeler, 'H')) },
+        { label: 'pi_len', sym: 'l_{tot} = n \\cdot k_p \\cdot d_{avg}', num: `${n} \\cdot ${fmt(k.perimeter, 4)} \\cdot ${mm(r.dAvgMm)}`, res: q(r.lengthMm, 'mm') },
+        { label: 'pi_rdc', sym: 'R_{dc} = \\frac{ρ_{Cu} \\cdot l_{tot}}{w \\cdot t}',
+          num: `\\frac{${tx(si(r.resistivity, 'Ω·m'))} \\cdot ${q(r.lengthMm, 'mm')}}{${mm(w)} \\cdot ${q(r.thicknessUm, 'µm')}}`, res: ohm(r.rDc) },
+      ], { note: 'pi_note', refs: ['S. S. Mohan et al., IEEE JSSC 34(10), 1999'],
+        where: [['n', 'pi_n', 'n'], ['w', 'pi_w', 'w'], ['s', 'pi_s', 's'], ['d_{out}', 'pi_dout', 'd'], ['t', 'pi_t', 't'],
+          [r.lWheeler ? 'c_i, K_i' : 'c_i', 'pi_coef'], ['k_p', 'pi_kp'], ['ρ_{Cu}', 'pi_rhoCu']] })
       + block('results', rows([
         ['pi_din', `${fixed(r.dInMm, 3)} mm`],
         ['pi_davg', `${fixed(r.dAvgMm, 3)} mm`],
@@ -263,6 +298,12 @@ export default {
       ]));
     const T = r.tune;
     if (T) {
+      const f0 = tx(si(r.fHz, 'Hz'));
+      const L = tx(si(r.lSheet, 'H'));
+      const cPar = v.cp > 0 ? v.cp * 1e-12 : 0;
+      const tCu = q(T.thicknessUm, 'µm');
+      const delta = q(T.deltaUm, 'µm');
+      const damped = T.rDamp > 0;
       html += messages('warn', T.warnings)
         + block('pi_tuneTitle', rows([
           ['pi_cExt', T.cExt > 0 ? si(T.cExt, 'F') : '—', true],
@@ -273,20 +314,22 @@ export default {
           ['pi_rac', si(T.rAc, 'Ω')],
           ['pi_qCoil', fmt(T.qCoil, 3)],
           ['pi_bw', si(T.bw, 'Hz')],
-        ]));
-    }
-    html += formulaBlock([
-      'd_in = d_out − 2·n·w − 2·(n−1)·s',
-      'd_avg = (d_out + d_in)/2,   ρ = (d_out − d_in)/(d_out + d_in)',
-      'Wheeler:  L = K1·µ0·n²·d_avg / (1 + K2·ρ)',
-      'Sheet:    L = µ0·n²·d_avg·c1/2 · [ln(c2/ρ) + c3·ρ + c4·ρ²]',
-    ], 'pi_note', ['S. S. Mohan et al., IEEE JSSC 34(10), 1999']);
-    if (T) {
-      html += formulaBlock([
-        'C_total = 1 / ((2πf0)²·L),   C = C_total − C_par',
-        'δ = √(ρ_Cu / (π·f·µ0)),   R_ac ≈ R_dc·(t/δ) / (1 − e^(−t/δ))',
-        'Q = ωL / R_ac,   Rq = ωL / Q_target − R_ac,   BW = f0 / Q',
-      ], 'pi_tuneNote', ['C. P. Yue & S. S. Wong, IEEE T-ED 47(3), 2000', 'ST AN2866', 'NXP AN11019']);
+        ]))
+        // The tuning values are the strong rows of the table above; their steps follow it.
+        + steps([
+          { label: 'pi_xl', sym: 'X_L = 2π \\cdot f_0 \\cdot L', num: `2π \\cdot ${f0} \\cdot ${L}`, res: ohm(T.xl) },
+          { label: 'pi_cTotal', sym: 'C_{total} = \\frac{1}{(2π \\cdot f_0)^{2} \\cdot L}', num: `\\frac{1}{(2π \\cdot ${f0})^{2} \\cdot ${L}}`, res: tx(si(T.cTotal, 'F')) },
+          T.cExt > 0 && { label: 'pi_cExt', sym: 'C = C_{total} − C_{par}', num: `${tx(si(T.cTotal, 'F'))} − ${tx(si(cPar, 'F'))}`, res: tx(si(T.cExt, 'F')) },
+          { label: 'pi_delta', sym: 'δ = \\sqrt{\\frac{ρ_{Cu}}{π \\cdot f_0 \\cdot µ_0}}',
+            num: `\\sqrt{\\frac{${tx(si(T.resistivity, 'Ω·m'))}}{π \\cdot ${f0} \\cdot ${MU0}}}`, res: delta },
+          { label: 'pi_rac', sym: 'R_{ac} = R_{dc} \\cdot \\frac{t / δ}{1 − e^{−t / δ}}',
+            num: `${ohm(r.rDc)} \\cdot \\frac{${tCu} / ${delta}}{1 − e^{−${tCu} / ${delta}}}`, res: ohm(T.rAc) },
+          { label: 'pi_qCoil', sym: 'Q = \\frac{X_L}{R_{ac}}', num: `\\frac{${ohm(T.xl)}}{${ohm(T.rAc)}}`, res: tx(fmt(T.qCoil, 4)) },
+          damped && { label: 'pi_rDamp', sym: 'R_q = \\frac{X_L}{Q_t} − R_{ac}', num: `\\frac{${ohm(T.xl)}}{${fmt(v.qt, 4)}} − ${ohm(T.rAc)}`, res: ohm(T.rDamp) },
+          { label: 'pi_bw', sym: damped ? 'BW = \\frac{f_0}{Q_t}' : 'BW = \\frac{f_0}{Q}', num: `\\frac{${f0}}{${fmt(T.qEff, 4)}}`, res: tx(si(T.bw, 'Hz')) },
+        ], { note: 'pi_tuneNote', refs: ['C. P. Yue & S. S. Wong, IEEE T-ED 47(3), 2000', 'ST AN2866', 'NXP AN11019'],
+          where: [['f_0', 'pi_f', 'ft'], ['L', 'pi_lSheet'], ['C_{par}', 'pi_cp', 'cp'], damped && ['Q_t', 'pi_qt', 'qt'],
+            ['t', 'pi_t', 't'], ['R_{dc}', 'pi_rdc'], ['ρ_{Cu}', 'pi_rhoCu']] });
     }
     html += `<p class="note">${esc(t('pi_antLink'))} <a href="#/antenna">${esc(t('tool_antenna'))}</a></p>`;
     return html;

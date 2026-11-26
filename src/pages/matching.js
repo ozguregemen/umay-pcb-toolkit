@@ -1,5 +1,6 @@
 import { matchNetwork, lSolutionCount, stepsOf, cx, cinv } from '../engine/matching.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, path, poly, circle, arrow } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -68,6 +69,17 @@ const strings = {
     mt_type_none: 'eleman yok',
     mt_noNet: 'Eşleştirme ağı',
     mt_none: 'gerekmiyor',
+    mt_stYt: 'Kaynaktaki hedef admitans 1/Zs* = Gt + jBt',
+    mt_stYl: 'Yük admitansı 1/ZL = GL + jBL',
+    mt_stXtot: 'Yük tarafındaki toplam seri reaktans (XL + X)',
+    mt_stBtot: 'Yük düğümündeki toplam süseptans (BL + B)',
+    mt_stRps: 'Kaynağın paralel eşdeğer direnci',
+    mt_stRpl: 'Yükün paralel eşdeğer direnci',
+    mt_stX2: 'Yük yarısı: Rv’ye kadar seri reaktans',
+    mt_stX1: 'Kaynak yarısı: Rv’den sonraki seri reaktans',
+    mt_stB2: 'Yük yarısı: 1/Rv’ye kadar paralel süseptans',
+    mt_stB1: 'Kaynak yarısı: 1/Rv’den sonraki paralel süseptans',
+    mt_stSign: 'Karekökün iki işareti de geçerli bir ağ verir; burada seçili çözümün işareti kullanılır (+ alçak geçiren benzeri, − yüksek geçiren benzeri biçim).',
     mt_note: 'Eşleştirme ağı kayıpsız kabul edilir. Her tasarım devre analiziyle doğrulanır: Zin, ZL’den başlanarak ağ boyunca geriye hesaplanır ve Zs* ile karşılaştırılır (Γ ≈ 0). Smith abağı, kaynak salt dirençse Z₀ = Rs’ye normalize edilir; böylece tam eşleşme merkezde biter. Kaynak karmaşıksa abak 50 Ω’a (VNA referansı) normalize edilir ve yol merkez yerine Zs* noktasında biter. Seri eleman noktayı sabit r çemberi, paralel eleman sabit g çemberi üzerinde taşır: seri L ve paralel C saat yönünde, seri C ve paralel L ters yönde. Bant genişliği frekans taramasıyla bulunur; kaynak ve yükün reaktansı f0’daki eşdeğer sabit L veya C olarak modellenir. Gerçek bir antenin empedansı frekansla farklı değişir, bu yüzden bu değer yaklaşıktır. Kaba kural BW ≈ f0/Q_L’dir; L ağında yüklü Q_L yaklaşık Q/2’dir, çünkü düğümü kaynak ve yük birlikte yükler. Bobin ESR’si, öz rezonans (SRF) ve pad parazitikleri dahil değildir; parçaların SRF’si çalışma frekansının en az 2–3 katı olmalıdır.',
     err_mtInputs: 'Frekans, Rs ve RL sıfırdan büyük olmalı.',
     err_mtQMin: 'Q = {q}, bu uçlar için en küçük Q’nun ({qmin}) altında: sanal direnç uç dirençlerinin yanlış tarafına düşer. Q’yu artırın ya da L ağını kullanın.',
@@ -153,6 +165,17 @@ const strings = {
     mt_type_none: 'no parts',
     mt_noNet: 'Matching network',
     mt_none: 'not needed',
+    mt_stYt: 'Target admittance at the source 1/Zs* = Gt + jBt',
+    mt_stYl: 'Load admittance 1/ZL = GL + jBL',
+    mt_stXtot: 'Total series reactance on the load side (XL + X)',
+    mt_stBtot: 'Total susceptance at the load node (BL + B)',
+    mt_stRps: 'Parallel-equivalent resistance of the source',
+    mt_stRpl: 'Parallel-equivalent resistance of the load',
+    mt_stX2: 'Load half: series reactance up to Rv',
+    mt_stX1: 'Source half: series reactance from Rv',
+    mt_stB2: 'Load half: shunt susceptance down to 1/Rv',
+    mt_stB1: 'Source half: shunt susceptance from 1/Rv',
+    mt_stSign: 'Both signs of the square root give a valid network; the sign of the selected solution is used here (+ the low-pass-like form, − the high-pass-like one).',
     mt_note: 'The matching network is assumed lossless. Every design is verified by circuit analysis: Zin is computed from ZL back through the network and compared with Zs* (Γ ≈ 0). The Smith chart is normalised to Z₀ = Rs when the source is purely resistive, so a perfect match ends at the centre. For a complex source it is normalised to 50 Ω (the VNA reference) and the path ends at the point Zs* instead of the centre. A series part moves the point along a constant-r circle, a shunt part along a constant-g circle: series L and shunt C clockwise, series C and shunt L the other way. Bandwidth comes from a frequency sweep in which the source and load reactance at f0 are modelled as an equivalent fixed L or C. A real antenna’s impedance changes differently with frequency, so this value is approximate. The rule of thumb is BW ≈ f0/Q_L; in an L network the loaded Q_L is about Q/2 because the source and the load both load the node. Inductor ESR, self-resonance (SRF) and pad parasitics are not included; the parts’ SRF should be at least 2–3 times the operating frequency.',
     err_mtInputs: 'Frequency, Rs and RL must be greater than zero.',
     err_mtQMin: 'Q = {q} is below the minimum Q ({qmin}) for these terminations: the virtual resistance would fall on the wrong side of the end resistances. Increase Q or use the L network.',
@@ -455,38 +478,106 @@ function partsText(parts) {
   return on.map((p) => `${t(p.pos === 'series' ? 'mt_series' : 'mt_shunt')} ${p.kind} ${si(p.value, unitOf(p), 4)}`).join(' · ');
 }
 
-function formulaLines(top) {
-  const common = [
-    'Check: Zin from ZL back through the network,  Γ = (Zin − Zs*)/(Zin + Zs)',
-    'VSWR = (1 + |Γ|)/(1 − |Γ|)        RL = −20·log10|Γ|',
-    'X > 0: L = X/ω   X < 0: C = −1/(ωX)   B > 0: C = B/ω   B < 0: L = −1/(ωB)',
-    'BW: frequency sweep to |Γ|² = 1/2 (−3 dB) and VSWR = 2;  BW ≈ f0/Q_L',
-  ];
-  if (top === 'pi') {
-    return [
-      'R_v = R_H/(Q² + 1),   Q ≥ Q_min = √(R_H/R_low − 1)',
-      'R_H, R_low: parallel equivalents |Z|²/R of source and load',
-      'Load → R_v: shunt + series L network;  R_v → Zs*: series + shunt',
-      'Middle series reactance X = X1 + X2',
-      ...common,
+// ---------------------------------------------------------------------------
+// Calculation steps
+// ---------------------------------------------------------------------------
+
+/**
+ * Signed value with its unit and a true minus sign; `par` puts a negative
+ * value in brackets. Five digits: the steps add and subtract reactances that
+ * can lie close together.
+ */
+function sq(x, unit, par = false) {
+  const s = tx(x < 0 ? `−${si(-x, unit, 5)}` : si(x, unit, 5));
+  return x < 0 && par ? `(${s})` : s;
+}
+/** Square of a value with its unit: (−20 Ω)². */
+const sqr = (x, unit) => `{(${sq(x, unit)})}^{2}`;
+/** Sign of the chosen square root, written only when it is negative. */
+const neg = (x) => (x < 0 ? '−' : '');
+
+/**
+ * Value of one part from its series reactance X or shunt susceptance B, given
+ * as the expression `sym` / `num`. The engine's rule: series X > 0 → L = X/ω,
+ * X < 0 → C = −1/(ωX); shunt B > 0 → C = B/ω, B < 0 → L = −1/(ωB).
+ */
+function partStep(p, r, sym, num) {
+  if (!p?.kind) return false;
+  const f = tx(si(r.fHz, 'Hz'));
+  const name = `${p.kind}_${p.name.slice(1)}`;
+  const direct = (p.pos === 'series') === (p.kind === 'L');
+  return {
+    labelRaw: `${p.name} · ${t(`mt_role_${p.role}`)}${r.stdParts ? ` · ${t('mt_exactV')}` : ''}`,
+    sym: direct ? `${name} = \\frac{${sym}}{2π \\cdot f}` : `${name} = \\frac{−1}{2π \\cdot f \\cdot (${sym})}`,
+    num: direct ? `\\frac{${num}}{2π \\cdot ${f}}` : `\\frac{−1}{2π \\cdot ${f} \\cdot (${num})}`,
+    res: tx(si(p.value, unitOf(p))),
+  };
+}
+
+/**
+ * The design as the engine computes it: the intermediate reactances and
+ * susceptances (returned in `detail`), then one step per part.
+ */
+function worked(r) {
+  const d = r.detail;
+  const { re: rs, im: xs } = r.zs;
+  const { re: rl, im: xl } = r.zl;
+  const O = (x, par) => sq(x, 'Ω', par);
+  const S = (x, par) => sq(x, 'S', par);
+  const q = fmt(r.q, 4);
+  const [p1, p2, p3] = r.parts;
+  let list;
+  if (!d) {
+    list = [{ label: 'mt_target', sym: 'Z_{in} = Z_s^{*}' }];
+  } else if (r.topology === 'pi') {
+    list = [
+      { label: 'mt_stRps', sym: 'R_{pS} = \\frac{R_s^{2} + X_s^{2}}{R_s}', num: `\\frac{${sqr(rs, 'Ω')} + ${sqr(xs, 'Ω')}}{${O(rs)}}`, res: O(d.rps) },
+      { label: 'mt_stRpl', sym: 'R_{pL} = \\frac{R_L^{2} + X_L^{2}}{R_L}', num: `\\frac{${sqr(rl, 'Ω')} + ${sqr(xl, 'Ω')}}{${O(rl)}}`, res: O(d.rpl) },
+      { label: 'mt_rv', sym: 'R_H = \\max(R_{pS}, R_{pL}), \\quad R_v = \\frac{R_H}{Q^{2} + 1}', num: `\\frac{${O(d.rh)}}{{${q}}^{2} + 1}`, res: O(r.rv) },
+      { label: 'mt_stBtot', sym: `B_2 = ${neg(d.btot2)}\\sqrt{\\frac{1}{R_{pL} \\cdot R_v} − \\frac{1}{R_{pL}^{2}}}`,
+        num: `${neg(d.btot2)}\\sqrt{\\frac{1}{${O(d.rpl)} \\cdot ${O(r.rv)}} − \\frac{1}{${sqr(d.rpl, 'Ω')}}}`, res: S(d.btot2), note: 'mt_stSign' },
+      { label: 'mt_stX2', sym: 'X_2 = B_2 \\cdot R_v \\cdot R_{pL}', num: `${S(d.btot2, true)} \\cdot ${O(r.rv)} \\cdot ${O(d.rpl)}`, res: O(d.x2) },
+      { label: 'mt_stX1', sym: `X_1 = ${neg(d.x1)}\\sqrt{R_v \\cdot R_{pS} − R_v^{2}}`,
+        num: `${neg(d.x1)}\\sqrt{${O(r.rv)} \\cdot ${O(d.rps)} − ${sqr(r.rv, 'Ω')}}`, res: O(d.x1) },
+      partStep(p1, r, '\\frac{X_s}{R_s^{2} + X_s^{2}} + \\frac{X_1}{R_v^{2} + X_1^{2}}',
+        `\\frac{${O(xs, true)}}{${sqr(rs, 'Ω')} + ${sqr(xs, 'Ω')}} + \\frac{${O(d.x1, true)}}{${sqr(r.rv, 'Ω')} + ${sqr(d.x1, 'Ω')}}`),
+      partStep(p2, r, 'X_1 + X_2', `${O(d.x1)} + ${O(d.x2, true)}`),
+      partStep(p3, r, 'B_2 + \\frac{X_L}{R_L^{2} + X_L^{2}}', `${S(d.btot2)} + \\frac{${O(xl, true)}}{${sqr(rl, 'Ω')} + ${sqr(xl, 'Ω')}}`),
+    ];
+  } else if (r.topology === 'T') {
+    list = [
+      { label: 'mt_rv', sym: 'R_{small} = \\min(R_s, R_L), \\quad R_v = R_{small} \\cdot (Q^{2} + 1)', num: `${O(d.rsmall)} \\cdot ({${q}}^{2} + 1)`, res: O(r.rv) },
+      { label: 'mt_stXtot', sym: `X_2 = ${neg(d.xtot2)}\\sqrt{R_L \\cdot R_v − R_L^{2}}`,
+        num: `${neg(d.xtot2)}\\sqrt{${O(rl)} \\cdot ${O(r.rv)} − ${sqr(rl, 'Ω')}}`, res: O(d.xtot2), note: 'mt_stSign' },
+      { label: 'mt_stB2', sym: 'B_2 = \\frac{X_2}{R_L \\cdot R_v}', num: `\\frac{${O(d.xtot2)}}{${O(rl)} \\cdot ${O(r.rv)}}`, res: S(d.b2) },
+      { label: 'mt_stB1', sym: `B_1 = ${neg(d.b1)}\\sqrt{\\frac{1}{R_v \\cdot R_s} − \\frac{1}{R_v^{2}}}`,
+        num: `${neg(d.b1)}\\sqrt{\\frac{1}{${O(r.rv)} \\cdot ${O(rs)}} − \\frac{1}{${sqr(r.rv, 'Ω')}}}`, res: S(d.b1) },
+      partStep(p1, r, '−X_s + B_1 \\cdot R_s \\cdot R_v', `−${O(xs, true)} + ${S(d.b1, true)} \\cdot ${O(rs)} \\cdot ${O(r.rv)}`),
+      partStep(p2, r, 'B_1 + B_2', `${S(d.b1)} + ${S(d.b2, true)}`),
+      partStep(p3, r, 'X_2 − X_L', `${O(d.xtot2)} − ${O(xl, true)}`),
+    ];
+  } else if (r.orient === 'shuntLoad') {
+    list = [
+      { label: 'mt_stYl', sym: 'G_L = \\frac{R_L}{R_L^{2} + X_L^{2}}', num: `\\frac{${O(rl)}}{${sqr(rl, 'Ω')} + ${sqr(xl, 'Ω')}}`, res: S(d.gl) },
+      { label: 'mt_stYl', sym: 'B_L = \\frac{−X_L}{R_L^{2} + X_L^{2}}', num: `\\frac{−${O(xl, true)}}{${sqr(rl, 'Ω')} + ${sqr(xl, 'Ω')}}`, res: S(d.bl) },
+      { label: 'mt_stBtot', sym: `B_{tot} = ${neg(d.btot)}\\sqrt{\\frac{G_L}{R_s} − G_L^{2}}`,
+        num: `${neg(d.btot)}\\sqrt{\\frac{${S(d.gl)}}{${O(rs)}} − ${sqr(d.gl, 'S')}}`, res: S(d.btot), note: 'mt_stSign' },
+      partStep(p1, r, '−X_s + \\frac{B_{tot}}{G_L^{2} + B_{tot}^{2}}', `−${O(xs, true)} + \\frac{${S(d.btot, true)}}{${sqr(d.gl, 'S')} + ${sqr(d.btot, 'S')}}`),
+      partStep(p2, r, 'B_{tot} − B_L', `${S(d.btot)} − ${S(d.bl, true)}`),
+    ];
+  } else {
+    list = [
+      { label: 'mt_stYt', sym: 'G_t = \\frac{R_s}{R_s^{2} + X_s^{2}}', num: `\\frac{${O(rs)}}{${sqr(rs, 'Ω')} + ${sqr(xs, 'Ω')}}`, res: S(d.gt) },
+      { label: 'mt_stYt', sym: 'B_t = \\frac{X_s}{R_s^{2} + X_s^{2}}', num: `\\frac{${O(xs)}}{${sqr(rs, 'Ω')} + ${sqr(xs, 'Ω')}}`, res: S(d.bt) },
+      { label: 'mt_stXtot', sym: `X_{tot} = ${neg(d.xtot)}\\sqrt{\\frac{R_L}{G_t} − R_L^{2}}`,
+        num: `${neg(d.xtot)}\\sqrt{\\frac{${O(rl)}}{${S(d.gt)}} − ${sqr(rl, 'Ω')}}`, res: O(d.xtot), note: 'mt_stSign' },
+      partStep(p1, r, 'B_t + \\frac{X_{tot}}{R_L^{2} + X_{tot}^{2}}', `${S(d.bt)} + \\frac{${O(d.xtot, true)}}{${sqr(rl, 'Ω')} + ${sqr(d.xtot, 'Ω')}}`),
+      partStep(p2, r, 'X_{tot} − X_L', `${O(d.xtot)} − ${O(xl, true)}`),
     ];
   }
-  if (top === 'T') {
-    return [
-      'R_v = R_small·(Q² + 1),   Q ≥ Q_min = √(R_large/R_small − 1)',
-      'R_small, R_large: series resistances Rs, RL',
-      'Load → R_v: series + shunt L network;  R_v → Zs*: shunt + series',
-      'Middle shunt susceptance B = B1 + B2',
-      ...common,
-    ];
-  }
-  return [
-    'Q = √(R_high/R_low − 1)     X_series = Q·R_low     X_shunt = R_high/Q',
-    'Complex ends (Zt = Zs*,  Yt = 1/Zt = Gt + jBt,  YL = GL + jBL):',
-    '  shunt at load:    (BL + B)² = GL/Rs − GL²,   X = −Xs − Im{1/(GL + j(BL + B))}',
-    '  shunt at source:  (XL + X)² = RL/Gt − RL²,   B = Bt − Im{1/(RL + j(XL + X))}',
-    ...common,
-  ];
+  return steps(list, { note: 'mt_note', refs: REFS,
+    where: [['f', 'mt_f', 'f'], ['R_s', 'mt_rs', 'rs'], ['X_s', 'mt_xs', 'xs'], ['R_L', 'mt_rl', 'rl'], ['X_L', 'mt_xl', 'xl'],
+      r.topology !== 'L' && ['Q', 'mt_q', 'q']] });
 }
 
 const REFS = [
@@ -582,6 +673,7 @@ export default {
       mtSol: { n: String(r.solutions?.length ?? 0) },
       mtStd: { es: r.series, rl: r.afterStd ? fixed(r.afterStd.returnLossDb, 1) : '' },
     });
+    html += worked(r);
 
     html += block('mt_match', rows([
       ['mt_before', matchText(r.before)],
@@ -616,7 +708,6 @@ export default {
       ])));
     }
 
-    html += formulaBlock(formulaLines(r.topology), 'mt_note', REFS);
     return html;
   },
 };

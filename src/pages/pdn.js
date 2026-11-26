@@ -1,5 +1,6 @@
-import { targetImpedance, sweepBank, bulkCapacitance, planeCapacitance, srf, bankZ } from '../engine/power.js';
-import { heroes, rows, block, formulaBlock, checks } from '../ui/calculator.js';
+import { targetImpedance, sweepBank, bulkCapacitance, planeCapacitance, srf, bankZ, capZ } from '../engine/power.js';
+import { heroes, rows, block, steps, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { logLogChart } from '../ui/chart.js';
 import { t } from '../i18n.js';
@@ -42,6 +43,8 @@ const strings = {
     pd_chart: 'Kondansatör bankası empedansı',
     pd_legendZ: '|Z| banka',
     pd_legendT: 'Z hedef',
+    pd_zAt: '{f} frekansında grup {n} empedansı',
+    pd_scanNote: 'Banka empedansı f_reg ile f_max arasında logaritmik aralıklı 201 frekansta hesaplanır; adımlar |Z| değerinin en yüksek çıktığı frekansı gösterir.',
     pd_note: 'Frekans alanı PDN yöntemi: regülatör bant genişliğinden PDN üst frekansına kadar |Z| hedef empedansın altında kalmalıdır. Her kondansatör seri R-L-C olarak modellenir; düzlem kapasitesi idealdir. Paralel farklı değerler arasında anti-rezonans tepeleri oluşur; değerleri yaymak ve ESL’i düşürmek (kısa, çoklu via) tepeleri bastırır.',
   },
   en: {
@@ -81,6 +84,8 @@ const strings = {
     pd_chart: 'Capacitor bank impedance',
     pd_legendZ: '|Z| bank',
     pd_legendT: 'Z target',
+    pd_zAt: 'Group {n} impedance at {f}',
+    pd_scanNote: 'The bank impedance is evaluated at 201 logarithmically spaced frequencies from f_reg to f_max; the steps show the frequency where |Z| is highest.',
     pd_note: 'Frequency-domain PDN method: |Z| must stay below the target impedance from the regulator bandwidth up to the PDN upper frequency. Each capacitor is a series R-L-C; the plane capacitance is ideal. Anti-resonance peaks form between different parallel values; spreading values and lowering ESL (short, multiple vias) suppresses them.',
   },
 };
@@ -105,6 +110,47 @@ const groupSection = (g, i) => ({
 
 for (const l of ['tr', 'en']) {
   for (let i = 1; i <= 3; i++) strings[l][`pd_group${i}`] = strings[l].pd_group.replace('{n}', i);
+}
+
+/**
+ * Calculation steps: the target impedance and the bulk capacitance, then the
+ * bank impedance at the frequency where it is highest between f_reg and f_max
+ * (found by the scan in compute()), built from each group's complex impedance.
+ */
+function worked(r, v) {
+  const q = (x, unit) => tx(si(x, unit));
+  const pct = (x) => tx(`${fmt(x, 4)} %`);
+  const zc = ([re, im]) => `${q(re, 'Ω')} ${im < 0 ? '−' : '+'} j \\cdot ${q(Math.abs(im), 'Ω')}`;
+  const f = q(r.fAtMax, 'Hz');
+  const plane = r.planeC > 0;
+  const act = r.groups.map((g, i) => ({ g, k: i + 1, z: r.zAtMax[i] })).filter((x) => x.z);
+  const bank = r.zmax > 0 && Number.isFinite(r.zmax);
+  const termsSym = act.map(({ k }) => `\\frac{n_${k}}{Z_${k}}`).concat(plane ? ['j \\cdot 2π f \\cdot C_{plane}'] : []);
+  const termsNum = act.map(({ g, z }) => `\\frac{${g.n}}{${zc(z)}}`).concat(plane ? [`j \\cdot 2π \\cdot ${f} \\cdot ${q(r.planeC, 'F')}`] : []);
+  return steps([
+    { label: 'pd_dv', sym: 'ΔV = V_{DD} \\cdot r', num: `${q(v.V, 'V')} \\cdot ${pct(v.rp)}`, res: q(r.dV, 'V') },
+    { label: 'pd_di', sym: 'ΔI = I_{max} \\cdot s', num: `${q(v.I, 'A')} \\cdot ${pct(v.st)}`, res: q(r.dI, 'A') },
+    { label: 'pd_target', sym: 'Z_T = \\frac{ΔV}{ΔI}', num: `\\frac{${q(r.dV, 'V')}}{${q(r.dI, 'A')}}`, res: q(r.zTarget, 'Ω') },
+    { label: 'pd_bulk', sym: 'C_{bulk} = \\frac{1}{2π \\cdot f_{reg} \\cdot Z_T}', num: `\\frac{1}{2π \\cdot ${q(r.fReg, 'Hz')} \\cdot ${q(r.zTarget, 'Ω')}}`, res: q(r.bulk, 'F') },
+    plane && { label: 'pd_planeC', sym: 'C_{plane} = \\frac{ε_0 \\cdot ε_r \\cdot A}{d}',
+      num: `\\frac{${tx(`${fmt(8.854, 4)} pF/m`)} \\cdot ${tx(fmt(v.pe, 4))} \\cdot ${tx(`${fmt(v.pa, 4)} mm²`)}}{${tx(`${fmt(v.pg, 4)} mm`)}}`, res: q(r.planeC, 'F') },
+    // The note on how the frequency is found goes where the frequency first appears.
+    ...(bank ? act.map(({ g, k, z }, i) => ({
+      labelRaw: t('pd_zAt', { n: k, f: si(r.fAtMax, 'Hz') }),
+      sym: `Z_${k} = ESR_${k} + j \\cdot (2π f \\cdot ESL_${k} − \\frac{1}{2π f \\cdot C_${k}})`,
+      num: `${q(g.esr, 'Ω')} + j \\cdot (2π \\cdot ${f} \\cdot ${q(g.esl, 'H')} − \\frac{1}{2π \\cdot ${f} \\cdot ${q(g.c, 'F')}})`,
+      res: zc(z),
+      note: i === 0 ? 'pd_scanNote' : undefined,
+    })) : []),
+    bank && { label: 'pd_zmax', sym: `|Z_{bank}| = |\\frac{1}{${termsSym.join(' + ')}}|`, num: `|\\frac{1}{${termsNum.join(' + ')}}|`, res: q(r.zmax, 'Ω'),
+      note: act.length ? undefined : 'pd_scanNote' },
+  ], {
+    note: 'pd_note',
+    where: [['V_{DD}', 'pd_vdd', 'V'], ['r', 'pd_ripple', 'rp'], ['I_{max}', 'pd_imax', 'I'], ['s', 'pd_step', 'st'], ['f_{reg}', 'pd_freg', 'fr'],
+      ...(bank && act.length ? [['n_i', 'pd_n'], ['C_i', 'pd_c'], ['ESR_i', 'pd_esr'], ['ESL_i', 'pd_esl']] : []),
+      plane && ['A', 'pd_planeArea', 'pa'], plane && ['d', 'pd_planeGap', 'pg'], plane && ['ε_r', 'pd_planeEr', 'pe']],
+    refs: ['L. Smith et al., “Power distribution system design methodology”, IEEE 1999', 'E. Bogatin, Signal and Power Integrity — Simplified'],
+  });
 }
 
 export default {
@@ -153,13 +199,15 @@ export default {
       if (z > zmax) { zmax = z; fAtMax = f; }
     }
     const totalC = groups.reduce((s, g) => s + (g.n > 0 ? g.c * g.n : 0), 0) + planeC;
+    // Complex impedance of one capacitor of each populated group at that frequency (for the steps).
+    const zAtMax = groups.map((g) => (g.n > 0 && g.c > 0 ? capZ(fAtMax, g) : null));
     return {
-      ok: true, ...tz, groups, planeC, fReg, fMax, sweep, zmax, fAtMax, totalC,
+      ok: true, ...tz, groups, planeC, fReg, fMax, sweep, zmax, fAtMax, zAtMax, totalC,
       bulk: bulkCapacitance(tz.zTarget, fReg),
     };
   },
 
-  render(r) {
+  render(r, v) {
     const main = heroes([
       ['pd_target', siHtml(r.zTarget, 'Ω')],
       ['pd_bulk', siHtml(r.bulk, 'F')],
@@ -169,6 +217,7 @@ export default {
     });
     const legend = `<div class="legend"><span><i></i>${esc(t('pd_legendZ'))}</span><span><i class="t"></i>${esc(t('pd_legendT'))}</span></div>`;
     return main
+      + worked(r, v)
       + block('pd_chart', chart + legend)
       + block('pd_checks', checks([
         [r.zmax <= r.zTarget, esc(t('pd_okBand')), `${esc(t('pd_zmax'))}: ${esc(si(r.zmax, 'Ω'))} @ ${esc(si(r.fAtMax, 'Hz'))}`],
@@ -181,13 +230,6 @@ export default {
         r.planeC > 0 && ['pd_planeC', si(r.planeC, 'F')],
         ['pd_band', r.sweep.band ? `${si(r.sweep.band[0], 'Hz')} – ${si(r.sweep.band[1], 'Hz')}` : esc(t('pd_none'))],
         r.sweep.worst && ['pd_worst', `${si(r.sweep.worst[1], 'Ω')} @ ${si(r.sweep.worst[0], 'Hz')}`],
-      ]))
-      + formulaBlock([
-        'Z_target = V · ripple / ΔI',
-        'C_bulk ≥ 1 / (2π · f_reg · Z_target)',
-        'Z_cap(f) = ESR + j(2πf·ESL − 1/(2πf·C)),  f_SRF = 1 / (2π√(ESL·C))',
-        'Z_bank = 1 / Σ (n_i / Z_cap,i)',
-        'C_plane = ε0·εr·A / d',
-      ], 'pd_note', ['L. Smith et al., “Power distribution system design methodology”, IEEE 1999', 'E. Bogatin, Signal and Power Integrity — Simplified']);
+      ]));
   },
 };

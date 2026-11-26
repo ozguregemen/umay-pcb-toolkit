@@ -48,7 +48,8 @@ export function planarInductor(p) {
 
   const lengthM = n * PERIMETER[shape] * dAvg;
   const tUm = p.thicknessUm > 0 ? p.thicknessUm : 35;
-  const rDc = (copperResistivity(Number.isFinite(p.tempC) ? p.tempC : 25) * lengthM) / ((w / 1000) * (tUm * 1e-6));
+  const rhoCu = copperResistivity(Number.isFinite(p.tempC) ? p.tempC : 25);
+  const rDc = (rhoCu * lengthM) / ((w / 1000) * (tUm * 1e-6));
 
   const warnings = [];
   if (rho < 0.1) warnings.push('fillLow');
@@ -64,6 +65,10 @@ export function planarInductor(p) {
     lengthMm: lengthM * 1000,
     rDc,
     warnings,
+    // Values the formulas above were evaluated with (for the calculation steps).
+    coef: { c1, c2, c3, c4, k1: wh ? wh[0] : null, k2: wh ? wh[1] : null, perimeter: PERIMETER[shape] },
+    resistivity: rhoCu,
+    thicknessUm: tUm,
   };
 }
 
@@ -81,7 +86,8 @@ export function coilTuning({ L, rDc, thicknessUm = 35, fHz, cParF = 0, qTarget, 
   const xl = w * L;
   const cTotal = 1 / (w * w * L);
   const cExt = cTotal - (cParF > 0 ? cParF : 0);
-  const delta = Math.sqrt(copperResistivity(tempC) / (Math.PI * fHz * MU0));
+  const rhoCu = copperResistivity(tempC);
+  const delta = Math.sqrt(rhoCu / (Math.PI * fHz * MU0));
   const t = (thicknessUm > 0 ? thicknessUm : 35) * 1e-6;
   const rAc = (rDc * (t / delta)) / (1 - Math.exp(-t / delta));
   const qCoil = xl / rAc;
@@ -91,5 +97,9 @@ export function coilTuning({ L, rDc, thicknessUm = 35, fHz, cParF = 0, qTarget, 
   if (!(cExt > 0)) warnings.push('cParTooBig');
   if (qTarget > 0 && !(rDamp > 0)) warnings.push('qBelowTarget');
   if (fHz < 1e6 && cExt > 10e-9) warnings.push('lfCoil');
-  return { xl, cTotal, cExt, deltaUm: delta * 1e6, rAc, qCoil, rDamp, qEff, bw: fHz / qEff, warnings };
+  return {
+    xl, cTotal, cExt, deltaUm: delta * 1e6, rAc, qCoil, rDamp, qEff, bw: fHz / qEff, warnings,
+    // Values used above (for the calculation steps).
+    resistivity: rhoCu, thicknessUm: thicknessUm > 0 ? thicknessUm : 35,
+  };
 }

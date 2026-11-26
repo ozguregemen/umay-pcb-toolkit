@@ -14,7 +14,8 @@
 /**
  * Series RLC step response from rest: source V, total resistance r, inductance
  * l (0 allowed), capacitance c. Returns the current peak, the capacitor
- * voltage maximum and functions i(t), vc(t).
+ * voltage maximum and functions i(t), vc(t); with inductance also the
+ * intermediate values alpha = R/(2L), w0, zeta (and wd, or the roots s1, s2).
  */
 export function rlcStep({ v, r, l = 0, c }) {
   if (!(l > 0)) {
@@ -33,7 +34,7 @@ export function rlcStep({ v, r, l = 0, c }) {
     const i = (t) => (v / (wd * l)) * Math.exp(-a * t) * Math.sin(wd * t);
     const tPeak = Math.atan2(wd, a) / wd;
     return {
-      type: 'under', zeta, w0, wd, tPeak, iPeak: i(tPeak),
+      type: 'under', alpha: a, zeta, w0, wd, tPeak, iPeak: i(tPeak),
       vMax: v * (1 + Math.exp((-a * Math.PI) / wd)),
       i,
       vc: (t) => v * (1 - Math.exp(-a * t) * (Math.cos(wd * t) + (a / wd) * Math.sin(wd * t))),
@@ -42,7 +43,7 @@ export function rlcStep({ v, r, l = 0, c }) {
   if (zeta <= 1 + 1e-9) {
     const i = (t) => (v / l) * t * Math.exp(-a * t);
     return {
-      type: 'critical', zeta: 1, w0, tPeak: 1 / a, iPeak: i(1 / a), vMax: v,
+      type: 'critical', alpha: a, zeta: 1, w0, tPeak: 1 / a, iPeak: i(1 / a), vMax: v,
       i,
       vc: (t) => v * (1 - (1 + a * t) * Math.exp(-a * t)),
     };
@@ -53,7 +54,7 @@ export function rlcStep({ v, r, l = 0, c }) {
   const i = (t) => (v / (l * (s1 - s2))) * (Math.exp(s1 * t) - Math.exp(s2 * t));
   const tPeak = Math.log(s2 / s1) / (s1 - s2);
   return {
-    type: 'over', zeta, w0, tPeak, iPeak: i(tPeak), vMax: v,
+    type: 'over', alpha: a, s1, s2, zeta, w0, tPeak, iPeak: i(tPeak), vMax: v,
     i,
     vc: (t) => v * (1 + (s2 * Math.exp(s1 * t) - s1 * Math.exp(s2 * t)) / (s1 - s2)),
   };

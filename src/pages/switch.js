@@ -1,5 +1,6 @@
 import { loadCurrent, bjtSwitch, mosfetSwitch, HOT_FACTOR } from '../engine/transistor.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, arrow, text, npn, mosfet, block as icBlock } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -64,6 +65,7 @@ const strings = {
     sw_iDrive: 'Sürücü pinin verdiği akım',
     sw_iRbe: 'Rbe’den akan akım',
     sw_beta: 'Gerçek zorlanmış β / hFE(min)',
+    sw_stepBeta: 'Gerçek zorlanmış β',
     sw_pC: 'Kollektör kaybı Vce(sat) · Ic',
     sw_pB: 'Baz kaybı Vbe · Ib',
     sw_pRb: 'Rb güç kaybı',
@@ -169,6 +171,7 @@ const strings = {
     sw_iDrive: 'Current from the drive pin',
     sw_iRbe: 'Current through Rbe',
     sw_beta: 'Actual forced β / hFE(min)',
+    sw_stepBeta: 'Actual forced β',
     sw_pC: 'Collector loss Vce(sat) · Ic',
     sw_pB: 'Base loss Vbe · Ib',
     sw_pRb: 'Rb dissipation',
@@ -222,6 +225,13 @@ const val = (x, unit) => (Number.isFinite(x) && x > 0 ? si(x, unit, 3) : '?');
 const pct = (x) => new Intl.NumberFormat(locale(), { style: 'percent', maximumSignificantDigits: 2 }).format(x);
 const SCALE = { mA: 1e-3, A: 1, mohm: 1e-3, ohm: 1, kHz: 1e3, Hz: 1 };
 const num = (x, u) => x * (SCALE[u] ?? 1);
+/** Forward voltage assumed for the flyback diode (V). */
+const V_F = 0.7;
+// Values as they appear inside the calculation steps.
+const qV = (x) => tx(si(x, 'V'));
+const qA = (x) => tx(si(x, 'A'));
+const qR = (x) => tx(si(x, 'Ω'));
+const qW = (x) => tx(si(x, 'W'));
 
 // ---------------------------------------------------------------------------
 // Diagram
@@ -275,13 +285,14 @@ function diagram(v, u, r) {
 
 // ---------------------------------------------------------------------------
 
-function renderBjt(r, v) {
+function renderBjt(r, v, worked) {
   return heroes([
     ['sw_rb', siHtml(r.rb, 'Ω'), `${esc(v.ser)} · ${esc(t('sw_exact', { r: si(r.rbExact, 'Ω', 3) }))}`],
     ['sw_ib', siHtml(r.ibStd, 'A'), esc(t('sw_ibSub', { b: fmt(r.betaStd, 3) }))],
     ['sw_ploss', siHtml(r.pTotal, 'W'), 'Vce·Ic + Vbe·Ib'],
   ])
     + messages('warn', r.warnings, r.vars)
+    + worked
     + block('sw_detailsTitle', rows([
       ['sw_ic', si(r.ic, 'A')],
       ['sw_ibTarget', si(r.ib, 'A')],
@@ -297,7 +308,7 @@ function renderBjt(r, v) {
     ]));
 }
 
-function renderMos(r, v, u) {
+function renderMos(r, v, u, worked) {
   const ton = Number.isFinite(r.tOn) ? siHtml(r.tOn, 's') : '∞';
   return heroes([
     ['sw_pcond', siHtml(r.pCond, 'W'), esc(t('sw_pcondSub', { p: si(r.pCondHot, 'W', 3) }))],
@@ -305,6 +316,7 @@ function renderMos(r, v, u) {
     ['sw_vds', siHtml(r.vds, 'V')],
   ])
     + messages('warn', r.warnings, r.vars)
+    + worked
     + block('sw_detailsTitle', rows([
       ['sw_id', si(r.id, 'A')],
       ['sw_vgs', `${si(r.vgs, 'V', 3)} (${esc(t('sw_vgss'))}: ${si(v.vgss, 'V', 3)})`],
@@ -322,12 +334,76 @@ function renderMos(r, v, u) {
     ]));
 }
 
+/** Flyback step shared by both switches: the diode clamps the switch node one forward drop above Vs. */
+const flybackStep = (v) => v.load === 'ind' && {
+  label: 'sw_vPeak', sym: 'V_{sw} \\approx V_{s} + V_{F}', num: `${qV(v.vs)} + ${qV(V_F)}`, res: tx(si(v.vs + V_F, 'V', 3)),
+};
+
+/** Steps of the saturated NPN switch, in the order bjtSwitch() works. */
+function workedBjt(r, v) {
+  const hasRbe = r.iRbe > 0;
+  const byR = v.ldm === 'r';
+  const drive = `${qV(v.vdrv)} − ${qV(v.vbe)}`;
+  return steps([
+    byR && { label: 'sw_ic', sym: 'I_{C} = \\frac{V_{s} − V_{CE}}{R_{L}}', num: `\\frac{${qV(v.vs)} − ${qV(v.vce)}}{${qR(v.rl)}}`, res: qA(r.ic) },
+    { label: 'sw_ibTarget', sym: 'I_{B,req} = \\frac{I_{C}}{β_{f}}', num: `\\frac{${qA(r.ic)}}{${tx(fmt(v.betaF))}}`, res: qA(r.ib) },
+    { label: 'sw_rbExact', sym: hasRbe ? 'R_{b} = \\frac{V_{drv} − V_{BE}}{I_{B,req} + \\frac{V_{BE}}{R_{BE}}}' : 'R_{b} = \\frac{V_{drv} − V_{BE}}{I_{B,req}}',
+      num: `\\frac{${drive}}{${qA(r.ib)}${hasRbe ? ` + \\frac{${qV(v.vbe)}}{${qR(v.rbe)}}` : ''}}`, res: qR(r.rbExact) },
+    { label: 'sw_rbStd', sym: 'R_{b}', res: qR(r.rb) },
+    { label: 'sw_ib', sym: hasRbe ? 'I_{B} = \\frac{V_{drv} − V_{BE}}{R_{b}} − \\frac{V_{BE}}{R_{BE}}' : 'I_{B} = \\frac{V_{drv} − V_{BE}}{R_{b}}',
+      num: `\\frac{${drive}}{${qR(r.rb)}}${hasRbe ? ` − \\frac{${qV(v.vbe)}}{${qR(v.rbe)}}` : ''}`, res: qA(r.ibStd) },
+    { label: 'sw_stepBeta', sym: 'β = \\frac{I_{C}}{I_{B}}', num: `\\frac{${qA(r.ic)}}{${qA(r.ibStd)}}`, res: tx(fmt(r.betaStd, 4)) },
+    { label: 'sw_ploss', sym: 'P = V_{CE} \\cdot I_{C} + V_{BE} \\cdot I_{B}',
+      num: `${qV(v.vce)} \\cdot ${qA(r.ic)} + ${qV(v.vbe)} \\cdot ${qA(r.ibStd)}`, res: qW(r.pTotal) },
+    flybackStep(v),
+  ], {
+    note: 'sw_noteBjt',
+    where: [(byR || v.load === 'ind') && ['V_{s}', 'sw_vs', 'vs'], byR && ['R_{L}', 'sw_rl', 'rl'], !byR && ['I_{C}', 'sw_il', 'il'],
+      ['β_{f}', 'sw_betaF', 'betaF'], ['V_{drv}', 'sw_vdrv', 'vdrv'], ['V_{BE}', 'sw_vbe', 'vbe'], ['V_{CE}', 'sw_vce', 'vce'],
+      hasRbe && ['R_{BE}', 'sw_rbe', 'rbe']],
+    refs: ['Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 2 (transistor switch) and ch. 1 (inductive loads, diode protection)', 'Small-signal BJT datasheets (Vce(sat), Vbe(sat) at Ic/Ib = 10)', 'IEC 60063:2015 (E-series)'],
+  });
+}
+
+/** Steps of the N-MOSFET switch, in the order mosfetSwitch() works. */
+function workedMos(r, v, u) {
+  const rds = num(v.rds, u.rds);
+  const hasRg = v.rg > 0;
+  const hasRpd = v.rpd > 0;
+  const hasF = Number.isFinite(r.pGate);
+  const byR = v.ldm === 'r';
+  const qg = tx(si(v.qg * 1e-9, 'C'));
+  return steps([
+    byR && { label: 'sw_id', sym: 'I_{D} = \\frac{V_{s}}{R_{L} + R_{DS}}', num: `\\frac{${qV(v.vs)}}{${qR(v.rl)} + ${qR(rds)}}`, res: qA(r.id) },
+    { label: 'sw_pcond', sym: 'P = I_{D}^{2} \\cdot R_{DS}', num: `{(${qA(r.id)})}^{2} \\cdot ${qR(rds)}`, res: qW(r.pCond) },
+    { labelRaw: t('sw_pHot', { k: fmt(HOT_FACTOR) }), sym: `P_{hot} = ${fmt(HOT_FACTOR)} \\cdot P`, num: `${fmt(HOT_FACTOR)} \\cdot ${qW(r.pCond)}`, res: qW(r.pCondHot) },
+    { label: 'sw_vds', sym: 'V_{DS} = I_{D} \\cdot R_{DS}', num: `${qA(r.id)} \\cdot ${qR(rds)}`, res: qV(r.vds) },
+    hasRg && hasRpd && { label: 'sw_vgs', sym: 'V_{GS} = V_{drv} \\cdot \\frac{R_{GS}}{R_{GS} + R_{g}}',
+      num: `${qV(v.vdrv)} \\cdot \\frac{${qR(v.rpd)}}{${qR(v.rpd)} + ${qR(v.rg)}}`, res: qV(r.vgs) },
+    r.plateauOk && (hasRg
+      ? { label: 'sw_ig', sym: 'I_{g} = \\min(I_{drv}, \\frac{V_{drv} − V_{pl}}{R_{g}})',
+        num: `\\min(${qA(num(v.idrv, u.idrv))}, \\frac{${qV(v.vdrv)} − ${qV(v.vpl)}}{${qR(v.rg)}})`, res: qA(r.ig) }
+      : { label: 'sw_ig', sym: 'I_{g} = I_{drv}', res: qA(r.ig) }),
+    r.plateauOk && { label: 'sw_ton', sym: 't_{on} \\approx \\frac{Q_{g}}{I_{g}}', num: `\\frac{${qg}}{${qA(r.ig)}}`, res: tx(si(r.tOn, 's')) },
+    hasF && { label: 'sw_pGate', sym: 'P_{gate} = Q_{g} \\cdot V_{drv} \\cdot f',
+      num: `${qg} \\cdot ${qV(v.vdrv)} \\cdot ${tx(si(num(v.fsw, u.fsw), 'Hz'))}`, res: qW(r.pGate) },
+    flybackStep(v),
+  ], {
+    note: 'sw_noteMos',
+    where: [(byR || v.load === 'ind') && ['V_{s}', 'sw_vs', 'vs'], byR && ['R_{L}', 'sw_rl', 'rl'], !byR && ['I_{D}', 'sw_il', 'il'],
+      ['R_{DS}', 'sw_rds', 'rds'], ['V_{drv}', 'sw_vdrv', 'vdrv'], hasRg && ['R_{g}', 'sw_rg', 'rg'], hasRg && hasRpd && ['R_{GS}', 'sw_rpd', 'rpd'],
+      r.plateauOk && ['I_{drv}', 'sw_idrv', 'idrv'], r.plateauOk && hasRg && ['V_{pl}', 'sw_vpl', 'vpl'], r.plateauOk && ['Q_{g}', 'sw_qg', 'qg'],
+      hasF && ['f', 'sw_fsw', 'fsw']],
+    refs: ['Vishay AN608A, Power MOSFET Basics: Understanding Gate Charge', 'TI SLUA618, Fundamentals of MOSFET and IGBT Gate Driver Circuits', 'Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 3 (power MOSFET switches)'],
+  });
+}
+
 function inductiveBlock(r, v) {
   const i = v.dev === 'bjt' ? r.ic : r.id;
   return block('sw_indTitle', rows([
     ['sw_dI', si(i, 'A', 3)],
     ['sw_dV', si(v.vs, 'V', 3)],
-    ['sw_vPeak', `≈ ${si(v.vs + 0.7, 'V', 3)}`],
+    ['sw_vPeak', `≈ ${si(v.vs + V_F, 'V', 3)}`],
   ]) + `<p class="note">${esc(t('sw_indNote'))}</p>`);
 }
 
@@ -434,27 +510,7 @@ export default {
   render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const bjt = v.dev === 'bjt';
-    const main = bjt ? renderBjt(r, v) : renderMos(r, v, u);
-    const lines = bjt
-      ? [
-        'Ic = (Vs − Vce(sat)) / RL   (or the given load current)',
-        'Ib = Ic / β_forced,   β_forced ≈ 10…20 ≪ hFE(min)',
-        'Rb = (Vdrive − Vbe(sat)) / (Ib + Vbe(sat) / Rbe)   → next lower standard value',
-        'P  = Vce(sat) · Ic + Vbe(sat) · Ib',
-      ]
-      : [
-        'Id = Vs / (RL + Rds(on))   (or the given load current)',
-        'P  = Id² · Rds(on),   hot: × 1.5 (Tj ≈ 100…125 °C)',
-        'Ig = min(I_driver, (Vdrive − V_plateau) / Rg),   t_on ≈ Qg / Ig',
-        'Vgs = Vdrive · Rgs / (Rgs + Rg)',
-        'P_gate = Qg · Vdrive · f,   I_gate,avg = Qg · f',
-      ];
-    if (v.load === 'ind') lines.push('V_switch,peak ≈ Vs + V_F (flyback diode clamps the coil)');
-    const refs = bjt
-      ? ['Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 2 (transistor switch) and ch. 1 (inductive loads, diode protection)', 'Small-signal BJT datasheets (Vce(sat), Vbe(sat) at Ic/Ib = 10)', 'IEC 60063:2015 (E-series)']
-      : ['Vishay AN608A, Power MOSFET Basics: Understanding Gate Charge', 'TI SLUA618, Fundamentals of MOSFET and IGBT Gate Driver Circuits', 'Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 3 (power MOSFET switches)'];
-    return main
-      + (v.load === 'ind' ? inductiveBlock(r, v) : '')
-      + formulaBlock(lines, bjt ? 'sw_noteBjt' : 'sw_noteMos', refs);
+    const main = bjt ? renderBjt(r, v, workedBjt(r, v)) : renderMos(r, v, u, workedMos(r, v, u));
+    return main + (v.load === 'ind' ? inductiveBlock(r, v) : '');
   },
 };

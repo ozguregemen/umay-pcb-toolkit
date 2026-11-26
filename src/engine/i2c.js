@@ -84,6 +84,7 @@ export function i2cPullup({ vdd, mode, cb, devices = 1, leak, series = 'E24', ma
   } : null);
   return {
     ...m, cb, vol, iol, lowVdd, rpMin, rpMaxRise, rpMaxLeak, rpMax, windowOk, iLeak,
+    margin, rpTarget: rpMax * margin, // upper limit that leaves the rise-time margin
     cbOver: cb > m.cbMax, rec: rec && at(rec), tight, check: at,
   };
 }

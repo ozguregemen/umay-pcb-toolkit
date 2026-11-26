@@ -1,6 +1,7 @@
 import { mosfetLosses, alphaFromRatio } from '../engine/mosfet.js';
-import { heroes, rows, block, formulaBlock, messages, invalid, checks } from '../ui/calculator.js';
-import { fixed, si, siHtml, esc } from '../ui/format.js';
+import { heroes, rows, block, steps, messages, invalid, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
+import { fmt, fixed, si, siHtml, esc } from '../ui/format.js';
 import { svg, text, rect, polygon, axes, wave, dimH } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
@@ -112,6 +113,9 @@ const strings = {
     err_mf_vth: 'Eşik gerilimi sıfırdan büyük ve plato geriliminden küçük olmalı.',
     err_mf_vdrv: 'Sürme gerilimi Miller plato geriliminden büyük olmalı.',
     err_mf_rgate: 'Gate yolundaki toplam direnç sıfırdan büyük olmalı.',
+    mf_rOn: 'Açmada gate yolu direnci',
+    mf_rOff: 'Kapamada gate yolu direnci',
+    mf_iterNote: 'Rds(on) Tj’ye, Tj de toplam kayba bağlıdır; bu yüzden ikisi, Tj değişmeyene kadar yinelemeyle (iterasyon) birlikte çözülür. Adımlar kayıpları bu son Tj değerinde gösterir; toplam kayıp son adımda yerine konunca aynı Tj elde edilir.',
     mf_note: 'Doğrusal yaklaşımla sert anahtarlama (kenetlenmiş endüktif yük) tahmini. Kaynak endüktansı ve kapasitelerin gerilime bağlılığı geçişleri değiştirir; sonuç, gerçek değerden onlarca yüzde sapabilen bir başlangıç tahminidir. Yalnızca Rds(on) Tj ile güncellenir; anahtarlama kayıplarının sıcaklıkla değişimi ihmal edilir. Gate sürme gücünün çoğu sürücüde ve harici dirençte harcanır, Tj hesabına yalnızca iç gate direncindeki pay girer.',
     mf_dgAria: 'MOSFET açılma ve kapanma dalga şekilleri, gerilim ile akımın örtüştüğü kayıp alanları ve kayıp dağılımı çubuğu',
     mf_dgStretch: 'geçişler büyütülmüş, ölçekli değil',
@@ -230,6 +234,9 @@ const strings = {
     err_mf_vth: 'The threshold voltage must be above zero and below the plateau voltage.',
     err_mf_vdrv: 'The drive voltage must be above the Miller plateau voltage.',
     err_mf_rgate: 'The total resistance in the gate path must be above zero.',
+    mf_rOn: 'Gate-path resistance at turn-on',
+    mf_rOff: 'Gate-path resistance at turn-off',
+    mf_iterNote: 'Rds(on) depends on Tj and Tj on the total loss, so the two are solved together by iteration until Tj stops changing. The steps show the losses at that final Tj; putting the total loss into the last step returns the same Tj.',
     mf_note: 'Linear-approximation estimate for hard switching (clamped inductive load). Source inductance and voltage-dependent capacitances change the transitions, so treat the result as a starting estimate that can be off by tens of percent. Only Rds(on) is updated with Tj; the temperature dependence of switching losses is ignored. Most of the gate-drive power is dissipated in the driver and external resistor; only the share in the internal gate resistance enters Tj.',
     mf_dgAria: 'MOSFET turn-on and turn-off waveforms with the voltage–current overlap (loss) areas shaded, and a loss breakdown bar',
     mf_dgStretch: 'transitions stretched, not to scale',
@@ -331,6 +338,127 @@ function diagram(v, u, r) {
 
 const KW = ['KW'];
 
+/**
+ * Calculation steps in the order of the calculation: the switching intervals,
+ * the losses that do not depend on temperature, then the conduction loss at
+ * the junction temperature the iteration settled on, the total and Tj itself.
+ * On thermal runaway there is no such temperature and those steps are left out.
+ */
+function worked(r, v, u) {
+  const q = (x, unit) => tx(si(x, unit));
+  const n = (x, sig = 4) => tx(fmt(x, sig));
+  const V = (x) => q(x, 'V');
+  const A = (x) => q(x, 'A');
+  const R = (x) => q(x, 'Ω');
+  const Q = (x) => q(x, 'C');
+  const T = (x) => q(x, 's');
+  const W = (x) => q(x, 'W');
+  const minus = (s) => s.replace(/^-/, '−');
+  const tjTxt = minus(fixed(r.tj, 1)); // as in the headline
+  const ta = tx(`${minus(fmt(v.ta, 4))} °C`);
+  const theta = (x) => tx(`${fmt(x, 4)} °C/W`);
+  const half = '\\frac{1}{2}';
+  const f = q(freq(v, u), 'Hz');
+  const vds = V(v.v);
+  const id = A(v.i);
+  const p = r.parts;
+  const res = r.isQg && r.isRes;
+  const cur = r.isQg && !r.isRes;
+  const duty = v.im !== 'rms';
+  const byRatio = v.tc !== 'alpha';
+  const chain = v.path === 'jc';
+  const settled = !r.runaway;
+  const list = [];
+
+  // Switching intervals
+  if (r.isQg) {
+    const vpl = V(v.vpl);
+    const vth = V(v.vth);
+    const vdrv = V(v.vdrv);
+    const qgd = Q(v.qgd * NS);
+    const qgs2 = Q(r.qgs2);
+    const vmid = `\\frac{${vpl} + ${vth}}{2}`;
+    list.push({ label: 'mf_qgs2', sym: 'Q_{gs2} = Q_{gs} \\cdot \\frac{V_{pl} − V_{th}}{V_{pl}}', num: `${Q(v.qgs * NS)} \\cdot \\frac{${vpl} − ${vth}}{${vpl}}`, res: qgs2 });
+    if (res) {
+      const rgx = R(num0(v.rgx));
+      const rgi = R(num0(v.rgi));
+      list.push(
+        { label: 'mf_rOn', sym: 'R_{on} = R_{src} + R_{g,ext} + R_{g,int}', num: `${R(v.rsrc)} + ${rgx} + ${rgi}`, res: R(r.rOn) },
+        { label: 'mf_rOff', sym: 'R_{off} = R_{sink} + R_{g,ext} + R_{g,int}', num: `${R(v.rsink)} + ${rgx} + ${rgi}`, res: R(r.rOff) },
+        { label: 'mf_tri', sym: 't_{ri} = \\frac{Q_{gs2} \\cdot R_{on}}{V_{drv} − \\frac{V_{pl} + V_{th}}{2}}', num: `\\frac{${qgs2} \\cdot ${R(r.rOn)}}{${vdrv} − ${vmid}}`, res: T(r.tri) },
+        { label: 'mf_tfv', sym: 't_{fv} = \\frac{Q_{gd} \\cdot R_{on}}{V_{drv} − V_{pl}}', num: `\\frac{${qgd} \\cdot ${R(r.rOn)}}{${vdrv} − ${vpl}}`, res: T(r.tfv) },
+        { label: 'mf_trv', sym: 't_{rv} = \\frac{Q_{gd} \\cdot R_{off}}{V_{pl}}', num: `\\frac{${qgd} \\cdot ${R(r.rOff)}}{${vpl}}`, res: T(r.trv) },
+        { label: 'mf_tfi', sym: 't_{fi} = \\frac{Q_{gs2} \\cdot R_{off}}{\\frac{V_{pl} + V_{th}}{2}}', num: `\\frac{${qgs2} \\cdot ${R(r.rOff)}}{${vmid}}`, res: T(r.tfi) },
+      );
+    } else {
+      list.push(
+        { label: 'mf_tri', sym: 't_{ri} = \\frac{Q_{gs2}}{I_{src}}', num: `\\frac{${qgs2}}{${A(v.isrc)}}`, res: T(r.tri) },
+        { label: 'mf_tfv', sym: 't_{fv} = \\frac{Q_{gd}}{I_{src}}', num: `\\frac{${qgd}}{${A(v.isrc)}}`, res: T(r.tfv) },
+        { label: 'mf_trv', sym: 't_{rv} = \\frac{Q_{gd}}{I_{sink}}', num: `\\frac{${qgd}}{${A(v.isink)}}`, res: T(r.trv) },
+        { label: 'mf_tfi', sym: 't_{fi} = \\frac{Q_{gs2}}{I_{sink}}', num: `\\frac{${qgs2}}{${A(v.isink)}}`, res: T(r.tfi) },
+      );
+    }
+  } else {
+    list.push(
+      { label: 'mf_tr', sym: 't_{ri} = t_{fv} = \\frac{t_r}{2}', num: `\\frac{${T(v.tr * NS)}}{2}`, res: T(r.tri) },
+      { label: 'mf_tf', sym: 't_{rv} = t_{fi} = \\frac{t_f}{2}', num: `\\frac{${T(v.tf * NS)}}{2}`, res: T(r.trv) },
+    );
+  }
+
+  // Losses that do not depend on the junction temperature
+  list.push(
+    { label: 'mf_pOn', sym: `P_{on} = ${half} \\cdot V_{DS} \\cdot I_D \\cdot (t_{ri} + t_{fv}) \\cdot f_{sw}`,
+      num: `${half} \\cdot ${vds} \\cdot ${id} \\cdot (${T(r.tri)} + ${T(r.tfv)}) \\cdot ${f}`, res: W(p.on) },
+    { label: 'mf_pOff', sym: `P_{off} = ${half} \\cdot V_{DS} \\cdot I_D \\cdot (t_{rv} + t_{fi}) \\cdot f_{sw}`,
+      num: `${half} \\cdot ${vds} \\cdot ${id} \\cdot (${T(r.trv)} + ${T(r.tfi)}) \\cdot ${f}`, res: W(p.off) },
+    p.coss > 0 && { label: 'mf_pCoss', sym: `P_{Coss} = ${half} \\cdot C_{oss} \\cdot V_{DS}^{2} \\cdot f_{sw}`,
+      num: `${half} \\cdot ${q(v.coss * (u.coss === 'nF' ? 1e-9 : 1e-12), 'F')} \\cdot {(${vds})}^{2} \\cdot ${f}`, res: W(p.coss) },
+    p.qrr > 0 && { label: 'mf_pQrr', sym: 'P_{Qrr} = Q_{rr} \\cdot V_{DS} \\cdot f_{sw}', num: `${Q(v.qrr * NS)} \\cdot ${vds} \\cdot ${f}`, res: W(p.qrr) },
+    p.dead > 0 && { label: 'mf_pDead', sym: 'P_{dead} = V_{SD} \\cdot I_D \\cdot 2 \\cdot t_{dead} \\cdot f_{sw}',
+      num: `${V(v.vsd)} \\cdot ${id} \\cdot 2 \\cdot ${T(v.td * NS)} \\cdot ${f}`, res: W(p.dead) },
+    p.gate > 0 && { label: 'mf_pGate', sym: `P_{g,FET} = ${half} \\cdot Q_g \\cdot V_{drv} \\cdot f_{sw} \\cdot (\\frac{R_{g,int}}{R_{on}} + \\frac{R_{g,int}}{R_{off}})`,
+      num: `${half} \\cdot ${Q(v.qg * NS)} \\cdot ${V(v.vdrv)} \\cdot ${f} \\cdot (\\frac{${R(v.rgi)}}{${R(r.rOn)}} + \\frac{${R(v.rgi)}}{${R(r.rOff)}})`, res: W(p.gate) },
+  );
+
+  // Conduction loss at the settled junction temperature, total and Tj
+  const sum = [['P_{cond}', p.cond], ['P_{on}', p.on], ['P_{off}', p.off], p.coss > 0 && ['P_{Coss}', p.coss], p.qrr > 0 && ['P_{Qrr}', p.qrr],
+    p.dead > 0 && ['P_{dead}', p.dead], p.gate > 0 && ['P_{g,FET}', p.gate]].filter(Boolean);
+  list.push(
+    settled && duty && { label: 'mf_irms', sym: 'I_{rms} = I_D \\cdot \\sqrt{D}', num: `${id} \\cdot \\sqrt{${tx(`${fmt(v.d, 4)} %`)}}`, res: A(r.irms) },
+    settled && byRatio && { label: 'mf_alpha', sym: 'α = 100 \\cdot (k_{125}^{\\frac{1}{100}} − 1)', num: `100 \\cdot ({${n(v.ratio)}}^{\\frac{1}{100}} − 1)`, res: tx(`${fmt(r.alphaPct, 4)} %/K`) },
+    settled && { label: 'mf_rdsHot', sym: 'R_{DS(on)}(T_j) = R_{DS(on),25} \\cdot {(1 + \\frac{α}{100})}^{T_j − 25}',
+      num: `${R(ohms(v.rds, u.rds))} \\cdot {(1 + \\frac{${n(r.alphaPct)}}{100})}^{${tx(tjTxt)} − 25}`, res: R(r.rds), note: 'mf_iterNote' },
+    settled && { label: 'mf_secCond', sym: 'P_{cond} = I_{rms}^{2} \\cdot R_{DS(on)}(T_j)', num: `{(${A(r.irms)})}^{2} \\cdot ${R(r.rds)}`, res: W(p.cond) },
+    settled && { label: 'mf_total', sym: `P = ${sum.map(([s]) => s).join(' + ')}`, num: sum.map(([, x]) => W(x)).join(' + '), res: W(r.total) },
+    settled && (chain
+      ? { label: 'mf_tj', sym: 'T_j = T_a + P \\cdot (θ_{JC} + θ_{CA})', num: `${ta} + ${W(r.total)} \\cdot (${theta(v.jc)} + ${theta(v.ca)})`, res: tx(`${tjTxt} °C`) }
+      : { label: 'mf_tj', sym: 'T_j = T_a + P \\cdot θ_{JA}', num: `${ta} + ${W(r.total)} \\cdot ${theta(v.ja)}`, res: tx(`${tjTxt} °C`) }),
+  );
+
+  return steps(list, {
+    note: 'mf_note',
+    where: [
+      ['V_{DS}', 'mf_v', 'v'], ['I_D', 'mf_i', 'i'], settled && (duty ? ['D', 'mf_duty', 'd'] : ['I_{rms}', 'mf_irms', 'irms']), ['f_{sw}', 'mf_fsw', 'f'],
+      r.isQg && ['Q_{gs}', 'mf_qgs', 'qgs'], r.isQg && ['Q_{gd}', 'mf_qgd', 'qgd'], r.isQg && ['V_{pl}', 'mf_vpl', 'vpl'], r.isQg && ['V_{th}', 'mf_vth', 'vth'],
+      res && ['V_{drv}', 'mf_vdrv', 'vdrv'], res && ['R_{src}', 'mf_rsrc', 'rsrc'], res && ['R_{sink}', 'mf_rsink', 'rsink'],
+      res && ['R_{g,ext}', 'mf_rgx', 'rgx'], res && ['R_{g,int}', 'mf_rgi', 'rgi'],
+      cur && ['I_{src}', 'mf_isrc', 'isrc'], cur && ['I_{sink}', 'mf_isink', 'isink'],
+      !r.isQg && ['t_r', 'mf_tr', 'tr'], !r.isQg && ['t_f', 'mf_tf', 'tf'],
+      p.coss > 0 && ['C_{oss}', 'mf_coss', 'coss'], p.qrr > 0 && ['Q_{rr}', 'mf_qrr', 'qrr'],
+      p.dead > 0 && ['t_{dead}', 'mf_tdead', 'td'], p.dead > 0 && ['V_{SD}', 'mf_vsd', 'vsd'], p.gate > 0 && ['Q_g', 'mf_qg', 'qg'],
+      settled && ['R_{DS(on),25}', 'mf_rds', 'rds'], settled && (byRatio ? ['k_{125}', 'mf_ratio', 'ratio'] : ['α', 'mf_alpha', 'alpha']),
+      settled && ['T_a', 'mf_ta', 'ta'],
+      settled && !chain && ['θ_{JA}', 'mf_thetaJA', 'ja'], settled && chain && ['θ_{JC}', 'mf_thetaJC', 'jc'], settled && chain && ['θ_{CA}', 'mf_thetaCA', 'ca'],
+    ],
+    refs: [
+      'Infineon AN “MOSFET Power Losses Calculation Using the Data-Sheet Parameters” (Graovac, Pürschel, Kiep, 2006)',
+      'TI SLUP169 (L. Balogh, gate drive design guide)',
+      'TI SLPA009A',
+      'Vishay AN608A',
+    ],
+  });
+}
+
 export default {
   diagram,
   id: 'mosfet',
@@ -411,10 +539,11 @@ export default {
 
   compute(v, u) {
     const irms = irmsOf(v);
+    const alphaPct = v.tc === 'alpha' ? v.alpha : alphaFromRatio(v.ratio);
     const r = mosfetLosses({
       v: v.v, i: v.i, irms, fsw: freq(v, u),
       rds25: ohms(v.rds, u.rds),
-      alphaPct: v.tc === 'alpha' ? v.alpha : alphaFromRatio(v.ratio),
+      alphaPct,
       sw: isQg(v) ? 'qg' : 'time',
       gate: {
         qgs: v.qgs * NS, qgd: v.qgd * NS, vpl: v.vpl, vth: v.vth, vdrv: v.vdrv,
@@ -429,11 +558,11 @@ export default {
       theta: v.path === 'jc' ? v.jc + v.ca : v.ja,
       ta: v.ta, tjMax: v.tjmax,
     });
-    if (r.ok) Object.assign(r, { irms, isQg: isQg(v), isRes: isRes(v) });
+    if (r.ok) Object.assign(r, { irms, alphaPct, isQg: isQg(v), isRes: isRes(v) });
     return r;
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const total = r.total;
     const share = (p) => `${si(p, 'W', 3)} · ${fixed((100 * p) / total, 1)} %`;
@@ -446,6 +575,7 @@ export default {
     ])
       + messages('warn', r.warnings)
       + (r.runaway ? '' : block('mf_checks', checks([[r.margin >= 0, esc(t('mf_tjOk')), `${t('mf_margin')}: ${deg(r.margin)}`]])))
+      + worked(r, v, u)
       + block('mf_breakdown', rows(PARTS.map(([k, label]) => (r.parts[k] > 0 || k === 'cond' || k === 'on' || k === 'off') && [label, share(r.parts[k])])
         .concat([['mf_total', si(total, 'W', 4), true]])))
       + block('mf_advice', `<p class="note">${esc(t(advice))}</p>`)
@@ -462,25 +592,7 @@ export default {
         ['mf_eoff', si(r.eOff, 'J', 3)],
         ['mf_gateTot', si(r.gateTotal, 'W', 3)],
         ['mf_gateDrv', si(r.gateDriver, 'W', 3)],
-      ]))
-      + formulaBlock([
-        'Irms = Id·√D   (flat-top current)',
-        'P_cond = Irms²·Rds(on)(25 °C)·(1 + α/100)^(Tj − 25)',
-        'Qgs2 ≈ Qgs·(Vpl − Vth)/Vpl',
-        'IG2,on = (Vdrv − (Vpl + Vth)/2)/R_on   IG,on = (Vdrv − Vpl)/R_on',
-        'IG,off = Vpl/R_off   IG2,off = ((Vpl + Vth)/2)/R_off   (R = R_drv + Rg,ext + Rg,int)',
-        't_ri = Qgs2/IG2,on   t_fv = Qgd/IG,on   t_rv = Qgd/IG,off   t_fi = Qgs2/IG2,off',
-        'E_on = ½·Vds·Id·(t_ri + t_fv)   E_off = ½·Vds·Id·(t_rv + t_fi)',
-        'P_sw = (E_on + E_off)·fsw      simple: P_sw = ½·Vds·Id·(tr + tf)·fsw',
-        'P_Coss = ½·Coss·Vds²·fsw   P_Qrr = Qrr·Vds·fsw   P_dead = VSD·Id·2·t_dead·fsw',
-        'P_gate = Qg·Vdrv·fsw   (in the FET: ½·P_gate·Rg,int·(1/R_on + 1/R_off))',
-        'Tj = Ta + P·θ   (θ = θJA or θJC + θCA), iterated with Rds(on)(Tj)',
-      ], 'mf_note', [
-        'Infineon AN “MOSFET Power Losses Calculation Using the Data-Sheet Parameters” (Graovac, Pürschel, Kiep, 2006)',
-        'TI SLUP169 (L. Balogh, gate drive design guide)',
-        'TI SLPA009A',
-        'Vishay AN608A',
-      ]);
+      ]));
   },
 };
 

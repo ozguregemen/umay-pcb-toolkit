@@ -1,5 +1,6 @@
 import { adcBasics, enobFromSinad, averaging, adcCode } from '../engine/adc.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, text, path, axes, wave, circle, dimH, dimV } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -325,7 +326,7 @@ export default {
     if (Number.isFinite(x)) {
       const vAdc = x * k;
       const c = adcCode(vAdc, p);
-      r.x = { value: x, vAdc, code: c.code, clipped: c.clipped, err: c.err, back: (c.code * base.lsb) / k };
+      r.x = { value: x, vAdc, code: c.code, raw: c.raw, clipped: c.clipped, err: c.err, back: (c.code * base.lsb) / k };
       if (c.clipped) r.warnings.push('ad_xClip');
     }
     return r;
@@ -339,12 +340,53 @@ export default {
         ? ['ad_resQ', esc(qty(r.resQ, v, 4)), '']
         : ['ad_qn', siHtml(r.qNoise, 'V'), esc(t('ad_qnSub'))];
     const hex = (c) => (c < 0 ? '' : ` (0x${c.toString(16).toUpperCase()})`);
+    // Calculation steps. Rounding to a code is sensitive to the digits of its operands,
+    // so the code step shows them with four digits more than the code has.
+    const qV = (x, sig = 4) => tx(si(x, 'V', sig));
+    const qR = (x) => tx(si(x, 'Ω'));
+    const bitTxt = (x) => tx(`${fmt(x, 4)} bit`);
+    const hasEnob = Number.isFinite(r.enob);
+    const scaled = v.scale !== 'none';
+    const unit = String(v.qu ?? '').trim();
+    const per = (u0) => (unit ? `${u0}/${unit}` : u0);
+    const kOf = (sig) => tx(v.scale === 'gain' ? `${fmt(r.k, sig)} ${per('V')}` : fmt(r.k, sig));
+    const kTxt = kOf(6);
+    const cSig = r.x ? Math.min(15, String(Math.abs(r.x.raw)).length + 4) : 6;
+    const xTxt = r.x && (v.scale === 'gain' ? tx(`${fmt(r.x.value, cSig)} ${unit}`.trim()) : qV(r.x.value, cSig));
+    const worked = steps([
+      { label: 'ad_lsb', sym: r.bipolar ? 'LSB = \\frac{2 \\cdot V_{ref}}{2^{N}}' : 'LSB = \\frac{V_{ref}}{2^{N}}',
+        num: `\\frac{${r.bipolar ? '2 \\cdot ' : ''}${qV(v.vref)}}{2^{${v.bits}}}`, res: qV(r.lsb) },
+      { label: 'ad_qn', sym: 'e_{q} = \\frac{LSB}{\\sqrt{12}}', num: `\\frac{${qV(r.lsb)}}{\\sqrt{12}}`, res: qV(r.qNoise) },
+      { label: 'ad_snr', sym: `SNR = ${fmt(6.02)} \\cdot N + ${fmt(1.76)}`, num: `${fmt(6.02)} \\cdot ${v.bits} + ${fmt(1.76)}`, res: tx(dbTxt(r.snr)) },
+      hasEnob && { label: 'ad_enob', sym: `ENOB = \\frac{SINAD − ${fmt(1.76)}}{${fmt(6.02)}}`,
+        num: `\\frac{${tx(dbTxt(v.sinad))} − ${fmt(1.76)}}{${fmt(6.02)}}`, res: bitTxt(r.enob) },
+      r.avg && { label: 'ad_nEff', sym: `N_{eff} = ${hasEnob ? 'ENOB' : 'N'} + \\frac{1}{2} \\cdot \\log_{2} M`,
+        num: `${hasEnob ? bitTxt(r.enob) : v.bits} + \\frac{1}{2} \\cdot \\log_{2}(${v.avg})`, res: bitTxt(r.nEff) },
+      v.scale === 'div' && { label: 'ad_k', sym: 'k = \\frac{R_{2}}{R_{1} + R_{2}}', num: `\\frac{${qR(v.r2)}}{${qR(v.r1)} + ${qR(v.r2)}}`, res: kTxt },
+      v.scale === 'gain' && { label: 'ad_k', sym: 'k = S \\cdot G', num: `${tx(`${fmt(v.sens)} ${per('mV')}`)} \\cdot ${tx(fmt(v.g))}`, res: kTxt },
+      scaled && { label: 'ad_resQ', sym: 'Δx = \\frac{LSB}{k}', num: `\\frac{${qV(r.lsb)}}{${kTxt}}`, res: tx(qty(r.resQ, v)) },
+      r.x && { label: 'ad_code', sym: scaled ? 'code = \\text{round}(\\frac{x \\cdot k}{LSB})' : 'code = \\text{round}(\\frac{V_{in}}{LSB})',
+        num: `\\text{round}(\\frac{${scaled ? `${r.x.value < 0 ? `(${xTxt})` : xTxt} \\cdot ${kOf(cSig)}` : xTxt}}{${qV(r.lsb, cSig)}})`,
+        res: r.x.clipped ? `${tx(intFmt(r.x.raw))} \\to ${tx(intFmt(r.x.code))}` : tx(intFmt(r.x.code)) },
+    ], {
+      note: 'ad_note',
+      where: [['N', 'ad_bits', 'bits'], ['V_{ref}', 'ad_vref', 'vref'], hasEnob && ['SINAD', 'ad_sinad', 'sinad'], r.avg && ['M', 'ad_avg', 'avg'],
+        v.scale === 'div' && ['R_{1}', 'ad_r1', 'r1'], v.scale === 'div' && ['R_{2}', 'ad_r2', 'r2'],
+        v.scale === 'gain' && ['S', 'ad_sens', 'sens'], v.scale === 'gain' && ['G', 'ad_g', 'g'],
+        r.x && { none: ['V_{in}', 'ad_xin', 'xin'], div: ['x', 'ad_xdiv', 'xdiv'], gain: ['x', 'ad_xq', 'xq'] }[v.scale]],
+      refs: [
+        'Analog Devices MT-001 (SNR = 6.02N + 1.76 dB), MT-229 (quantisation noise), MT-003 (SINAD, ENOB)',
+        'Kester, Data Conversion Handbook (ADI, 2005), ch. 2',
+        'Silicon Labs AN118, Improving ADC Resolution by Oversampling and Averaging',
+      ],
+    });
     return heroes([
       ['ad_lsb', siHtml(r.lsb, 'V'), esc(t('ad_lsbSub', { n: intFmt(r.codes), fs: si(r.fsr, 'V', 4) }))],
       ['ad_snr', `${esc(fmt(r.snr, 4))} <span class="u">dB</span>`, esc(t('ad_snrSub'))],
       third,
     ])
       + messages('warn', r.warnings, r.vars)
+      + worked
       + block('ad_convTitle', rows([
         ['ad_fsr', si(r.fsr, 'V')],
         ['ad_codes', intFmt(r.codes)],
@@ -382,18 +424,6 @@ export default {
         ['ad_code', `${intFmt(r.x.code)}${hex(r.x.code)}`, true],
         ['ad_back', qty(r.x.back, v, 5)],
         ['ad_err', si(r.x.err, 'V', 3)],
-      ])) : '')
-      + formulaBlock([
-        'FSR = Vref (unipolar) or 2·Vref (bipolar),   LSB = FSR / 2^N',
-        'code = round(Vin / LSB)   (ideal: transitions at ½ LSB, error ±½ LSB)',
-        'quantisation noise = LSB / √12,   SNR_ideal = 6.02·N + 1.76 dB',
-        'ENOB = (SINAD − 1.76 dB) / 6.02 dB',
-        'averaging M samples: SNR + 10·log10(M),   N + ½·log2(M) bits',
-        'scaling: divider k = R2 / (R1 + R2);  sensor k = S · G;  resolution = LSB / k',
-      ], 'ad_note', [
-        'Analog Devices MT-001 (SNR = 6.02N + 1.76 dB), MT-229 (quantisation noise), MT-003 (SINAD, ENOB)',
-        'Kester, Data Conversion Handbook (ADI, 2005), ch. 2',
-        'Silicon Labs AN118, Improving ADC Resolution by Oversampling and Averaging',
-      ]);
+      ])) : '');
   },
 };

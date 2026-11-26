@@ -2,7 +2,8 @@ import { decode, encode, decodeSmd, encodeSmd, HEX, DIGIT, MULTIPLIER, TOLERANCE
 import { nearestStandard, decadeValues } from '../engine/eseries.js';
 
 const E96 = decadeValues('E96').map((x) => Math.round(x * 100));
-import { hero, rows, block, formulaBlock, invalid } from '../ui/calculator.js';
+import { hero, rows, block, steps, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 
@@ -44,6 +45,13 @@ const strings = {
     cc_read: 'Okuma yönü',
     cc_readInfo: 'Tolerans bandı (genellikle altın/gümüş/kahverengi) diğerlerinden biraz uzakta durur ve sağda olmalıdır. Okumaya karşı uçtan başlayın.',
     cc_note: 'IEC 60062:2016. 4 bantlı dirençte iki anlamlı rakam, 5–6 bantlıda üç anlamlı rakam vardır. Gri tolerans bandı eski tablolarda ±%0,05, IEC 60062:2016’da ±%0,01’dir.',
+    cc_stepBands: 'Bant değerleri',
+    cc_stepLetters: 'Kod değerleri',
+    cc_stepSmdR: 'R harfi ondalık ayırıcının yerini gösterir; değer doğrudan ohm olarak okunur.',
+    cc_whDigits: 'Baştaki rakamlar (anlamlı rakamlar)',
+    cc_whExp: 'Son rakam (10’un kuvveti)',
+    cc_whEiaIdx: 'E96 serisinde k. sıradaki değer (01 = 100 … 96 = 976)',
+    cc_whEiaMult: 'Harfin gösterdiği çarpan',
     err_value: 'Değer sıfırdan büyük olmalı.',
     err_range: 'Değer renk kodu aralığının dışında.',
     err_digit: 'Rakam bantları altın/gümüş olamaz.',
@@ -83,6 +91,13 @@ const strings = {
     cc_read: 'Reading direction',
     cc_readInfo: 'The tolerance band (usually gold/silver/brown) sits slightly apart and goes on the right. Start reading from the other end.',
     cc_note: 'IEC 60062:2016. 4-band resistors carry two significant digits, 5–6-band resistors three. The grey tolerance band is ±0.05 % in older charts and ±0.01 % in IEC 60062:2016.',
+    cc_stepBands: 'Band values',
+    cc_stepLetters: 'Code values',
+    cc_stepSmdR: 'The letter R marks the decimal point; the value is read directly in ohms.',
+    cc_whDigits: 'Leading digits (significant figures)',
+    cc_whExp: 'Last digit (power of ten)',
+    cc_whEiaIdx: 'Value at position k of the E96 series (01 = 100 … 96 = 976)',
+    cc_whEiaMult: 'Multiplier given by the letter',
     err_value: 'Value must be greater than zero.',
     err_range: 'Value is outside the colour-code range.',
     err_digit: 'Digit bands cannot be gold/silver.',
@@ -107,6 +122,69 @@ function resistor(bands) {
     <rect x="80" y="18" width="220" height="54" rx="22" fill="#d9c49a" stroke="var(--border-strong)"/>
     ${bands.map((b, i) => (b === 'none' ? '' : `<rect x="${xs[i]}" y="18" width="16" height="54" fill="${HEX[b]}" stroke="rgb(0 0 0 / .25)"/>`)).join('')}
   </svg>`;
+}
+
+/** A power of ten in the formula notation: 100 → 10^{2}, 0.1 → 10^{−1}. */
+function pow10(x) {
+  const e = Math.round(Math.log10(x));
+  return `10^{${e < 0 ? `−${-e}` : e}}`;
+}
+
+const REFS = ['IEC 60062:2016', 'EIA-96 marking code'];
+
+/**
+ * The decoding rule as steps. Colour bands: what each band stands for, digits
+ * times multiplier, then the tolerance limits (when encoding, the value is
+ * split first and the colours follow). SMD codes: the rule that matched.
+ */
+function worked(r) {
+  const ohm = tx(si(r.ohms, 'Ω'));
+  if (r.mode === 'smd') {
+    const d = r.smd;
+    if (d.rule === 'eia96') {
+      return steps([
+        { label: 'cc_stepLetters', sym: `${tx(d.index)} \\to ${d.value}, \\quad ${tx(d.letter)} \\to ${pow10(d.mult)}` },
+        { label: 'cc_result', sym: 'R = E96_{k} \\cdot m', num: `${d.value} \\cdot ${pow10(d.mult)}`, res: ohm },
+      ], { note: 'cc_note', refs: REFS, where: [['E96_{k}', 'cc_whEiaIdx', 'code'], ['m', 'cc_whEiaMult', 'code']] });
+    }
+    if (d.rule === 'point') {
+      return steps([
+        { label: 'cc_result', sym: `${tx(d.code)} \\to ${tx(`${fmt(r.ohms, 6)} Ω`)}`, note: 'cc_stepSmdR' },
+      ], { note: 'cc_note', refs: REFS });
+    }
+    return steps([
+      { label: 'cc_result', sym: 'R = d \\cdot 10^{n}', num: `${d.digits} \\cdot 10^{${d.exp}}`, res: ohm },
+    ], { note: 'cc_note', refs: REFS, where: [['d', 'cc_whDigits', 'code'], ['n', 'cc_whExp', 'code']] });
+  }
+  const enc = r.mode === 'encode';
+  const n = r.digits.length;
+  const cols = r.colors;
+  const name = (c) => tx(t(`col_${c}`));
+  const tol = tx(`${fmt(r.tolPct)} %`);
+  // Band colour ↔ what it stands for, in reading order.
+  const pairs = [
+    ...r.digits.map((d, i) => [name(cols[i]), String(d)]),
+    [name(cols[n]), pow10(r.mult)],
+    [name(cols[n + 1]), tx(`±${fmt(r.tolPct)} %`)],
+    r.tempco !== undefined && [name(cols[n + 2]), tx(`${r.tempco} ppm/K`)],
+  ].filter(Boolean);
+  const bands = { label: 'cc_stepBands', sym: pairs.map(([c, x]) => (enc ? `${x} \\to ${c}` : `${c} \\to ${x}`)).join(', \\quad ') };
+  const value = {
+    label: enc ? 'cc_value' : 'cc_result',
+    sym: n === 2 ? 'R = (10 \\cdot d_{1} + d_{2}) \\cdot m' : 'R = (100 \\cdot d_{1} + 10 \\cdot d_{2} + d_{3}) \\cdot m',
+    num: `(${n === 2 ? `10 \\cdot ${r.digits[0]} + ${r.digits[1]}` : `100 \\cdot ${r.digits[0]} + 10 \\cdot ${r.digits[1]} + ${r.digits[2]}`}) \\cdot ${pow10(r.mult)}`,
+    res: ohm,
+  };
+  return steps([
+    ...(enc ? [value, bands] : [bands, value]),
+    { label: 'cc_range', sym: 'R_{min} = R \\cdot (1 − tol)', num: `${ohm} \\cdot (1 − ${tol})`, res: tx(si(r.min, 'Ω')) },
+    { label: 'cc_range', sym: 'R_{max} = R \\cdot (1 + tol)', num: `${ohm} \\cdot (1 + ${tol})`, res: tx(si(r.max, 'Ω')) },
+  ], {
+    note: 'cc_note',
+    refs: REFS,
+    where: [enc && ['R', 'cc_value', 'val'], ['d_{1}', 'cc_d1', !enc && 'd1'], ['d_{2}', 'cc_d2', !enc && 'd2'], n === 3 && ['d_{3}', 'cc_d3', !enc && 'd3'],
+      ['m', 'cc_m', !enc && 'm'], ['tol', 'cc_tol', 'tol']],
+  });
 }
 
 export default {
@@ -160,15 +238,16 @@ export default {
     if (v.mode === 'smd') {
       const d = decodeSmd(v.code, E96);
       if (!d.ok) return d;
-      return { ok: true, mode: 'smd', ohms: d.ohms, kind: d.kind, tolPct: null };
+      return { ok: true, mode: 'smd', ohms: d.ohms, kind: d.kind, tolPct: null, smd: d };
     }
     const n = Number(v.nb);
     if (isDec(v)) {
-      return { mode: 'decode', ...decode([v.d1, v.d2, ...(n > 4 ? [v.d3] : []), v.m, v.tol, ...(n === 6 ? [v.tc] : [])]) };
+      const colors = [v.d1, v.d2, ...(n > 4 ? [v.d3] : []), v.m, v.tol, ...(n === 6 ? [v.tc] : [])];
+      return { mode: 'decode', ...decode(colors), colors };
     }
     const e = encode(v.val, n, v.tol, v.tc);
     if (!e.ok) return e;
-    return { mode: 'encode', ...decode(e.bands), bands: e.bands, exact: e.exact };
+    return { mode: 'encode', ...decode(e.bands), bands: e.bands, colors: e.bands, exact: e.exact };
   },
 
   render(r) {
@@ -182,6 +261,7 @@ export default {
     return hero('cc_result', siHtml(r.ohms, 'Ω'), sub)
       + bandsText
       + (r.mode === 'encode' && !r.exact ? `<ul class="msg warn"><li>${esc(t('cc_notExact'))}</li></ul>` : '')
+      + worked(r)
       + block('results', rows([
         r.tolPct !== null && ['cc_range', `${si(r.min, 'Ω')} – ${si(r.max, 'Ω')}`],
         r.tempco !== undefined && ['cc_tempco', `${r.tempco} ppm/K`],
@@ -190,12 +270,6 @@ export default {
         smd.three && ['cc_smd3', `<code>${esc(smd.three)}</code>`],
         smd.four && ['cc_smd4', `<code>${esc(smd.four)}</code>`],
         ['cc_smdEia', smd.eia96 ? `<code>${esc(smd.eia96)}</code>` : '—'],
-      ]))
-      + formulaBlock([
-        'R = (d1·10 + d2) · multiplier              (4 bands)',
-        'R = (d1·100 + d2·10 + d3) · multiplier     (5–6 bands)',
-        'SMD:  472 = 47·10² = 4.7 kΩ    4R7 = 4.7 Ω    1002 = 100·10² = 10 kΩ',
-        'EIA-96: 01C = 100·100 = 10 kΩ   (two digits = E96 index, letter = multiplier)',
-      ], 'cc_note', ['IEC 60062:2016', 'EIA-96 marking code']);
+      ]));
   },
 };

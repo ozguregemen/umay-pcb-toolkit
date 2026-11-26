@@ -1,6 +1,7 @@
 import { calculatePadstack, FAB_ALLOWANCE_MM, LEAD_CLEARANCE_MM, MIN_RING_MM } from '../engine/padstack.js';
 import { toMm, fromMm } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages, invalid, checks } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -50,6 +51,10 @@ const strings = {
     ps_oz: 'Pad bakır ağırlığı',
     ps_ozInfo: 'IPC-2221: 1 oz’un üzerindeki her oz için üretim payına 0,05 mm eklenir (kalın bakır daha fazla yan aşınır).',
     ps_ringWorstInt: 'En kötü durum halkası (iç, matkaba göre)',
+    ps_aExt: 'En büyük bitmiş delik (a, dış katman)',
+    ps_aInt: 'En büyük matkap deliği (a, iç katman)',
+    ps_kLead: 'Seviyenin bacak–delik boşluğu (IPC-2222 Tablo 9-3)',
+    ps_cLevel: 'Seviyenin üretim payı (IPC-2221 Tablo 9-1)',
     err_lead: 'Bacak boyutları sıfırdan büyük olmalı.',
     err_hole: 'Delik çapı sıfırdan büyük olmalı.',
     warn_aspectHigh: 'En-boy oranı 10:1’in üzerinde; kaplama güvenilirliği için üreticinize danışın.',
@@ -110,6 +115,10 @@ const strings = {
     ps_oz: 'Pad copper weight',
     ps_ozInfo: 'IPC-2221: add 0.05 mm to the fabrication allowance for each oz above 1 oz (thick copper undercuts more).',
     ps_ringWorstInt: 'Worst-case ring (internal, to drilled hole)',
+    ps_aExt: 'Largest finished hole (a, external)',
+    ps_aInt: 'Largest drilled hole (a, internal)',
+    ps_kLead: 'Lead-to-hole clearance of the level (IPC-2222 Table 9-3)',
+    ps_cLevel: 'Fabrication allowance of the level (IPC-2221 Table 9-1)',
     err_lead: 'Lead dimensions must be greater than zero.',
     err_hole: 'Hole diameter must be greater than zero.',
     warn_aspectHigh: 'Aspect ratio above 10:1; consult your fabricator about plating reliability.',
@@ -137,6 +146,57 @@ const Lh = (mm) => (isImperial()
   : `${fixed(mm, 3)} <span class="u">mm</span>`);
 
 const r2 = (x) => Math.round(x * 100) / 100;
+
+/**
+ * Calculation steps in the order of the engine: hole size (from the lead for
+ * component holes), the largest holes a, the allowance c, the two minimum
+ * lands and, when a pad is given, its worst-case rings.
+ */
+function worked(r, v, u) {
+  // The engine works in mm and the terms add up exactly there, so the steps use mm
+  // (to the nanometre); imperial readers also get the results in mil.
+  const q = (mm) => tx(`${fmt(Number(mm.toFixed(6)), 12)} mm`.replace('-', '−'));
+  const out = (mm) => q(mm) + (isImperial() ? ` = ${tx(`${fmt(fromMm(mm, 'mil'), 4)} mil`.replace('-', '−'))}` : '');
+  const mm = (k) => toMm(v[k], u[k]);
+  const lead = v.k !== 'via';
+  const rect = v.k === 'rect';
+  const heavy = v.oz > 1;
+  const lv = tx(r.level);
+  const tol = q(mm('tol'));
+  const c = q(r.fabAllowance);
+  const a = q(r.maxHole);
+  const aInt = q(r.maxDrill);
+  const pad = r.check;
+  return steps([
+    rect && { label: 'ps_leadEq', sym: 'd_{lead} = \\sqrt{w^{2} + t^{2}}',
+      num: `\\sqrt{{(${q(mm('lw'))})}^{2} + {(${q(mm('lt'))})}^{2}}`, res: q(r.leadDia) },
+    lead && { label: 'ps_holeNom', sym: `d_{nom} = d_{lead} + k_{${lv}} + Δ`,
+      num: `${q(r.leadDia)} + ${q(LEAD_CLEARANCE_MM[r.level])} + ${tol}`, res: out(r.nominalHole) },
+    { label: 'ps_aExt', sym: 'a_{ext} = d_{nom} + Δ', num: `${q(r.nominalHole)} + ${tol}`, res: a },
+    heavy
+      ? { label: 'ps_fab', sym: `c = c_{${lv}} + ${q(0.05)} \\cdot (W − 1)`,
+        num: `${q(FAB_ALLOWANCE_MM[r.level])} + ${q(0.05)} \\cdot (${fmt(v.oz, 4)} − 1)`, res: c }
+      : { label: 'ps_fab', sym: `c = c_{${lv}}`, res: c },
+    { label: 'ps_landExt', sym: 'D_{ext} = a_{ext} + 2 b_{ext} + c', num: `${a} + 2 \\cdot ${q(MIN_RING_MM.external)} + ${c}`, res: out(r.landExt) },
+    { label: 'ps_aInt', sym: 'a_{int} = a_{ext} + Δ_{drill}', num: `${a} + ${q(mm('da'))}`, res: aInt },
+    { label: 'ps_landInt', sym: 'D_{int} = a_{int} + 2 b_{int} + c', num: `${aInt} + 2 \\cdot ${q(MIN_RING_MM.internal)} + ${c}`, res: out(r.landInt) },
+    pad && { label: 'ps_ringWorst', sym: 'r_{ext} = \\frac{D − a_{ext} − c}{2}', num: `\\frac{${q(pad.padMm)} − ${a} − ${c}}{2}`, res: out(pad.worstRing) },
+    pad && { label: 'ps_ringWorstInt', sym: 'r_{int} = \\frac{D − a_{int} − c}{2}', num: `\\frac{${q(pad.padMm)} − ${aInt} − ${c}}{2}`, res: out(pad.worstRingInt) },
+  ], {
+    note: 'ps_note',
+    where: [
+      v.k === 'via' && ['d_{nom}', 'ps_hole', 'h'],
+      v.k === 'round' && ['d_{lead}', 'ps_lead', 'ld'],
+      rect && ['w', 'ps_leadW', 'lw'], rect && ['t', 'ps_leadT', 'lt'],
+      lead && [`k_{${lv}}`, 'ps_kLead', 'lv'],
+      ['Δ', 'ps_tol', 'tol'], ['Δ_{drill}', 'ps_drillAllow', 'da'],
+      [`c_{${lv}}`, 'ps_cLevel', 'lv'], heavy && ['W', 'ps_oz', 'oz'],
+      ['b_{ext}', 'ps_c2221e'], ['b_{int}', 'ps_c2221i'],
+      pad && ['D', 'ps_pad', 'pad'],
+    ],
+    refs: ['IPC-2221 §9.1, Tables 9-1/9-2', 'IPC-2222 Table 9-3', 'IPC-6012 §3.4.2'],
+  });
+}
 
 /**
  * Live top view, to scale: pad, finished-hole tolerance band, drilled hole,
@@ -303,6 +363,7 @@ export default {
       ]))
       : '';
     return main + messages('warn', r.warnings)
+      + worked(r, v, u)
       + block('results', rows([
         r.leadDia !== null && ['ps_leadEq', L(r.leadDia)],
         ['ps_holeNom', L(r.nominalHole)],
@@ -314,16 +375,6 @@ export default {
       + chk
       // Fab check: nominal finished hole and the designed pad (or the computed minimum land).
       + fabCheck({ holeMm: r.nominalHole, padMm: c ? c.padMm : r.landExt, holeKind: v.k === 'via' ? 'via' : 'pth',
-        boardMm: Number.isFinite(v.b) ? toMm(v.b, u.b) : undefined })
-      + formulaBlock([
-        'Component hole:  d_hole,min = d_lead,max + 0.25 / 0.20 / 0.15 mm   (A / B / C)',
-        '                 d_hole,max ≤ d_lead,min + 0.7 / 0.7 / 0.6 mm',
-        'Land:            D = a + 2b + c',
-        '                 a = max finished hole (ext) · max drilled hole (int)',
-        `                 b = ${fmt(MIN_RING_MM.external)} mm (ext) / ${fmt(MIN_RING_MM.internal)} mm (int)`,
-        `                 c = ${Object.entries(FAB_ALLOWANCE_MM).map(([k, x]) => `${k} ${fmt(x)}`).join(' · ')} mm  + 0.05 mm/oz above 1 oz`,
-        'Worst-case ring: (D − a − c) / 2',
-        `Rect. lead:      d = √(w² + t²)     (clearance ${Object.values(LEAD_CLEARANCE_MM).map((x) => fmt(x)).join('/')} mm)`,
-      ], 'ps_note', ['IPC-2221 §9.1, Tables 9-1/9-2', 'IPC-2222 Table 9-3', 'IPC-6012 §3.4.2']);
+        boardMm: Number.isFinite(v.b) ? toMm(v.b, u.b) : undefined });
   },
 };

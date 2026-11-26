@@ -18,8 +18,9 @@ export function fromGammaMag(g) {
   return {
     gamma: m,
     vswr: m >= 1 ? Infinity : (1 + m) / (1 - m),
-    returnLossDb: m === 0 ? Infinity : -20 * Math.log10(m),
-    mismatchLossDb: m >= 1 ? Infinity : -10 * Math.log10(1 - m * m),
+    // "+ 0" turns the −0 of a full reflection / perfect match into 0 (shown as "-0.00 dB" otherwise).
+    returnLossDb: m === 0 ? Infinity : -20 * Math.log10(m) + 0,
+    mismatchLossDb: m >= 1 ? Infinity : -10 * Math.log10(1 - m * m) + 0,
     reflectedPct: m * m * 100,
     transmittedPct: (1 - m * m) * 100,
   };

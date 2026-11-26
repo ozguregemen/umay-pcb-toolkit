@@ -603,6 +603,9 @@ export function formulaBlock(lines, noteKey, refs) {
     <pre class="formula">${lines.map(esc).join('\n')}</pre>${note}${src}</details>`;
 }
 
+// Test hook: when `record` is set, every steps() call hands it the list of steps.
+export const stepsTrace = { record: null };
+
 /**
  * Worked calculation, shown open right under the result so the reader sees
  * where the number comes from: each step is the formula in symbols, the same
@@ -621,6 +624,7 @@ export function formulaBlock(lines, noteKey, refs) {
  * Falsy steps are skipped, so conditions can be written inline.
  */
 export function steps(items, { note, refs, where } = {}) {
+  stepsTrace.record?.(items.filter(Boolean));
   const list = items.filter(Boolean).map((s) => {
     const label = s.labelRaw ?? (s.label ? t(s.label) : '');
     const parts = [s.sym, s.num, s.res];

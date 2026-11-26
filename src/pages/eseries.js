@@ -1,5 +1,6 @@
 import { SERIES, TOLERANCE, decadeValues, nearestStandard, bestSeriesPair, bestParallelPair } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fixed, si, siHtml, esc } from '../ui/format.js';
 import { t, locale } from '../i18n.js';
 import { svg, rect, path, text, arrow } from '../ui/svg.js';
@@ -20,6 +21,12 @@ const strings = {
     es_result: 'sonuç',
     es_none: 'bulunamadı',
     es_decadeTitle: '{series} değerleri (bir dekad)',
+    es_stepLo: 'Alttaki değere uzaklık',
+    es_stepHi: 'Üstteki değere uzaklık',
+    es_stepErr: 'En yakın değerin hatası',
+    es_stepPair: 'Aynı seriden iki değer',
+    es_stepNearest: 'Komşu standart değerler IEC 60063 tablosundan okunur; hedefe uzaklığı küçük olan alınır (eşitlikte alttaki).',
+    es_stepSearch: 'Arama ile bulunur: serideki her R_a için ideal R_b’nin hemen altındaki ve üstündeki standart değerler denenir (değer oranı en fazla 100); |δ| değeri en küçük olan çift seçilir.',
     es_note: 'Kombinasyonlar aynı seriden seçilir ve iki değerin oranı en fazla 100 ile sınırlıdır. Eşit hatada değerleri birbirine daha yakın olan çift tercih edilir. Kombinasyon hatasına parçaların kendi toleransı ayrıca eklenir.',
     ok_es_exact: 'Hedef, {series} serisinde standart bir değer.',
     es_dgAria: 'Bir dekadın log ölçekli sayı doğrusu: serinin standart değerleri çentik olarak, hedef değer ok ile, alttaki ve üstteki en yakın değerler ve bunların tolerans bantları',
@@ -42,6 +49,12 @@ const strings = {
     es_result: 'result',
     es_none: 'none found',
     es_decadeTitle: '{series} values (one decade)',
+    es_stepLo: 'Distance to the value below',
+    es_stepHi: 'Distance to the value above',
+    es_stepErr: 'Error of the closest value',
+    es_stepPair: 'Two values from the same series',
+    es_stepNearest: 'The neighbouring standard values are read from the IEC 60063 table; the one at the smaller distance from the target is taken (the lower one on a tie).',
+    es_stepSearch: 'Found by search: for every R_a of the series, the standard values just below and above the ideal R_b are tried (value ratio at most 100); the pair with the smallest |δ| is kept.',
     es_note: 'Combinations use the same series and are limited to a value ratio of 100. On equal error the pair with closer values wins. The parts’ own tolerance adds to the combination error.',
     ok_es_exact: 'The target is a standard {series} value.',
     es_dgAria: 'Log-scale number line of one decade: the standard values of the series as ticks, the target as an arrow, the nearest values below and above and their tolerance bands',
@@ -77,6 +90,33 @@ function decadeTable(series, marks) {
     }).join('')}</tr>`);
   }
   return `<div class="table-scroll"><table class="grid"><tbody>${body.join('')}</tbody></table></div>`;
+}
+
+/**
+ * Calculation steps. The standard values themselves come from the IEC table
+ * (a lookup); the steps show the rule that picks the closest one and the
+ * error that rates it and the two-resistor combinations.
+ */
+function worked(r, v) {
+  // Standard values have at most three digits; the target keeps the digits typed
+  // (the steps subtract values that lie close together).
+  const R = (x) => tx(si(x, 'Ω', 7));
+  const err = (x) => tx(pct(x).replace('-', '−'));
+  const lower = r.nearest === r.below;
+  const T = R(v.x);
+  const pair = (label, p, sym, num, note) => p && {
+    label, sym: `δ = \\frac{${sym} − R}{R}`, num: `\\frac{${num(R(p.a), R(p.b))} − ${T}}{${T}}`, res: err(p.errorPct), note,
+  };
+  return steps([
+    !r.exact && { label: 'es_stepLo', sym: 'R − R_{lo}', num: `${T} − ${R(r.below)}`, res: R(v.x - r.below) },
+    !r.exact && { label: 'es_stepHi', sym: 'R_{hi} − R', num: `${R(r.above)} − ${T}`, res: R(r.above - v.x) },
+    { label: 'es_nearest', sym: r.exact ? 'R_{std} = R' : `R_{std} = R_{${lower ? 'lo' : 'hi'}}`, res: R(r.nearest), note: r.exact ? undefined : 'es_stepNearest' },
+    { label: 'es_stepErr', sym: 'δ = \\frac{R_{std} − R}{R}', num: `\\frac{${R(r.nearest)} − ${T}}{${T}}`, res: err(r.errorPct) },
+    pair('es_seriesPair', r.seriesPair, '(R_a + R_b)', (a, b) => `(${a} + ${b})`, 'es_stepSearch'),
+    pair('es_parallelPair', r.parallelPair, '\\frac{R_a \\cdot R_b}{R_a + R_b}', (a, b) => `\\frac{${a} \\cdot ${b}}{${a} + ${b}}`, r.seriesPair ? undefined : 'es_stepSearch'),
+  ], { note: 'es_note', refs: ['IEC 60063:2015 — Preferred number series for resistors and capacitors'],
+    where: [['R', 'es_target', 'x'], !r.exact && ['R_{lo}', 'es_below'], !r.exact && ['R_{hi}', 'es_above'], ['R_{std}', 'es_nearest'],
+      (r.seriesPair || r.parallelPair) && ['R_a, R_b', 'es_stepPair']] });
 }
 
 const mantissa = (x) => x / 10 ** Math.floor(Math.log10(x) + 1e-12);
@@ -182,6 +222,7 @@ export default {
       ['es_above', siHtml(r.above, 'Ω'), pct(((r.above - v.x) / v.x) * 100)],
     ])
       + (r.exact ? messages('ok', ['es_exact'], { es_exact: { series } }) : '')
+      + worked(r, v)
       + block(t('es_combosTitle', { series }), rows([
         comboRow('es_seriesPair', r.seriesPair, '+'),
         comboRow('es_parallelPair', r.parallelPair, '∥'),
@@ -189,12 +230,6 @@ export default {
       + block(t('es_decadeTitle', { series }), decadeTable(series, {
         nearest: mantissa(r.nearest),
         others: [mantissa(r.below), mantissa(r.above)],
-      }), true)
-      + formulaBlock([
-        'closest:   min |R_std − R|,  error = (R_std − R) / R',
-        'series:    R = Ra + Rb',
-        'parallel:  R = Ra · Rb / (Ra + Rb)',
-        'search:    all pairs from the series with max(Ra, Rb) / min(Ra, Rb) ≤ 100',
-      ], 'es_note', ['IEC 60063:2015 — Preferred number series for resistors and capacitors']);
+      }), true);
   },
 };

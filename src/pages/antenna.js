@@ -1,5 +1,6 @@
 import { patchAntenna, monopole } from '../engine/antenna.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { svg, rect, path, text, dimH, dimV } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -32,6 +33,9 @@ const strings = {
     an_quarterAir: 'Çeyrek dalga (havada)',
     an_half: 'Yarım dalga dipol (toplam)',
     an_groundMin: 'Toprak düzlemi uzunluğu (en az ≈ λ/4)',
+    an_c: 'Işığın boşluktaki hızı',
+    an_stepWire: 'Havadaki telin çevresinde dielektrik yoktur.',
+    an_stepRad: 'arccos radyan cinsinden alınır.',
     an_dgPatch: 'Yama anten üstten görünüş (ölçekli)',
     an_dgMono: 'Monopol anten yerleşimi (ölçeksiz)',
     an_dgGround: 'toprak düzlemi',
@@ -73,6 +77,9 @@ const strings = {
     an_quarterAir: 'Quarter wave (in air)',
     an_half: 'Half-wave dipole (total)',
     an_groundMin: 'Ground plane length (at least ≈ λ/4)',
+    an_c: 'Speed of light in vacuum',
+    an_stepWire: 'A wire in air has no dielectric around it.',
+    an_stepRad: 'arccos is taken in radians.',
     an_dgPatch: 'Patch antenna top view (to scale)',
     an_dgMono: 'Monopole antenna layout (not to scale)',
     an_dgGround: 'ground plane',
@@ -188,25 +195,59 @@ export default {
 
   compute(v, u) {
     const fHz = v.f * (u.f === 'GHz' ? 1e9 : 1e6);
-    if (isPatch(v)) return { type: 'patch', z0: v.z0, ...patchAntenna({ fHz, er: v.er, hMm: v.h, z0: v.z0 }) };
-    return { type: 'mono', ...monopole({ fHz, er: v.er, mode: v.pl }) };
+    if (isPatch(v)) return { type: 'patch', z0: v.z0, fHz, ...patchAntenna({ fHz, er: v.er, hMm: v.h, z0: v.z0 }) };
+    return { type: 'mono', fHz, ...monopole({ fHz, er: v.er, mode: v.pl }) };
   },
 
-  render(r) {
+  render(r, v) {
     if (!r.ok) return invalid(r.errors);
+    // Calculation steps: c in mm/ns and f in GHz (1/ns), so that c/f comes out in mm.
+    const C = tx(`${fmt(299.792458, 4)} mm/ns`);
+    const f = tx(`${fmt(r.fHz / 1e9, 4)} GHz`);
+    const L = (x) => tx(`${fmt(x, 4)} mm`);
+    const er = fmt(v.er, 4);
     if (r.type === 'mono') {
+      const wire = v.pl === 'wire';
       return heroes([['an_quarter', `${fixed(r.quarterMm, 1)} <span class="u">mm</span>`], ['an_lambda', `${fixed(r.lambda0Mm, 1)} <span class="u">mm</span>`]])
+        + steps([
+          { label: 'an_lambda', sym: 'λ_0 = \\frac{c}{f}', num: `\\frac{${C}}{${f}}`, res: L(r.lambda0Mm) },
+          wire
+            ? { label: 'an_ereff', sym: 'ε_{eff} = 1', note: 'an_stepWire' }
+            : { label: 'an_ereff', sym: 'ε_{eff} ≈ \\frac{ε_r + 1}{2}', num: `\\frac{${er} + 1}{2}`, res: fmt(r.eeff, 4) },
+          { label: 'an_quarter', sym: 'L = \\frac{λ_0}{4 \\cdot \\sqrt{ε_{eff}}}', num: `\\frac{${L(r.lambda0Mm)}}{4 \\cdot \\sqrt{${fmt(r.eeff, 4)}}}`, res: L(r.quarterMm) },
+        ], { note: 'an_note', refs: ['C. A. Balanis, Antenna Theory, 4th ed.', 'TI AN058 / DN035 (PCB antennas)'],
+          where: [['c', 'an_c'], ['f', 'an_f', 'f'], !wire && ['ε_r', 'an_er', 'er']] })
         + block('results', rows([
           ['an_ereff', fmt(r.eeff, 3)],
           ['an_quarterAir', mm(r.quarterAirMm, 1)],
           ['an_half', mm(r.halfDipoleMm, 1)],
           ['an_groundMin', mm(r.groundMinMm, 0)],
         ]))
-        + formulaBlock(['λ0 = c / f', 'εeff ≈ (εr + 1)/2  (printed) · 1 (wire)', 'L = λ0 / (4·√εeff)'], 'an_note', ['C. A. Balanis, Antenna Theory, 4th ed.', 'TI AN058 / DN035 (PCB antennas)'])
         + `<p class="note">${esc(t('an_matchLink'))} <a href="#/matching">${esc(t('tool_matching'))}</a></p>`;
     }
+    const h = L(v.h);
+    const W = L(r.wMm);
+    const ee = fmt(r.ereff, 4);
+    const rin = tx(`${fmt(r.rin, 3)} Ω`); // approximate values: as many digits as in the table below
     return heroes([['an_W', `${fixed(r.wMm, 2)} <span class="u">mm</span>`], ['an_L', `${fixed(r.lMm, 2)} <span class="u">mm</span>`]])
       + messages('warn', r.warnings)
+      + steps([
+        { label: 'an_lambda', sym: 'λ_0 = \\frac{c}{f_0}', num: `\\frac{${C}}{${f}}`, res: L(r.lambda0Mm) },
+        { label: 'an_W', sym: 'W = \\frac{c}{2 \\cdot f_0} \\cdot \\sqrt{\\frac{2}{ε_r + 1}}', num: `\\frac{${C}}{2 \\cdot ${f}} \\cdot \\sqrt{\\frac{2}{${er} + 1}}`, res: W },
+        { label: 'an_ereff', sym: 'ε_{reff} = \\frac{ε_r + 1}{2} + \\frac{ε_r − 1}{2} \\cdot \\frac{1}{\\sqrt{1 + 12 \\cdot \\frac{h}{W}}}',
+          num: `\\frac{${er} + 1}{2} + \\frac{${er} − 1}{2} \\cdot \\frac{1}{\\sqrt{1 + 12 \\cdot \\frac{${h}}{${W}}}}`, res: ee },
+        { label: 'an_dL', sym: `ΔL = ${fmt(0.412)} \\cdot h \\cdot \\frac{(ε_{reff} + ${fmt(0.3)}) \\cdot (\\frac{W}{h} + ${fmt(0.264)})}{(ε_{reff} − ${fmt(0.258)}) \\cdot (\\frac{W}{h} + ${fmt(0.8)})}`,
+          num: `${fmt(0.412)} \\cdot ${h} \\cdot \\frac{(${ee} + ${fmt(0.3)}) \\cdot (\\frac{${W}}{${h}} + ${fmt(0.264)})}{(${ee} − ${fmt(0.258)}) \\cdot (\\frac{${W}}{${h}} + ${fmt(0.8)})}`, res: L(r.dLMm) },
+        { label: 'an_L', sym: 'L = \\frac{c}{2 \\cdot f_0 \\cdot \\sqrt{ε_{reff}}} − 2 \\cdot ΔL',
+          num: `\\frac{${C}}{2 \\cdot ${f} \\cdot \\sqrt{${ee}}} − 2 \\cdot ${L(r.dLMm)}`, res: L(r.lMm) },
+        { label: 'an_rin', sym: 'R_{in} ≈ 90 \\cdot \\frac{ε_r^{2}}{ε_r − 1} \\cdot (\\frac{L}{W})^{2}',
+          num: `90 \\cdot \\frac{{${er}}^{2}}{${er} − 1} \\cdot (\\frac{${L(r.lMm)}}{${W}})^{2}`, res: rin },
+        r.insetMm > 0 && { label: 'an_inset', sym: 'y_0 = \\frac{L}{π} \\cdot \\arccos\\sqrt{\\frac{Z_0}{R_{in}}}',
+          num: `\\frac{${L(r.lMm)}}{π} \\cdot \\arccos\\sqrt{\\frac{${tx(`${fmt(r.z0, 4)} Ω`)}}{${rin}}}`, res: L(r.insetMm), note: 'an_stepRad' },
+        { label: 'an_bw', sym: `BW ≈ ${fmt(3.77)} \\cdot \\frac{ε_r − 1}{ε_r^{2}} \\cdot \\frac{W}{L} \\cdot \\frac{h}{λ_0}`,
+          num: `${fmt(3.77)} \\cdot \\frac{${er} − 1}{{${er}}^{2}} \\cdot \\frac{${W}}{${L(r.lMm)}} \\cdot \\frac{${h}}{${L(r.lambda0Mm)}}`, res: tx(`${fixed(r.bwFrac * 100, 2)} %`) },
+      ], { note: 'an_note', refs: ['C. A. Balanis, Antenna Theory, 4th ed., ch. 14', 'D. R. Jackson & N. G. Alexopoulos, IEEE T-AP 1991'],
+        where: [['c', 'an_c'], ['f_0', 'an_f', 'f'], ['ε_r', 'an_er', 'er'], ['h', 'an_h', 'h'], ['Z_0', 'an_z0', 'z0']] })
       + block('results', rows([
         ['an_inset', mm(r.insetMm, 2)],
         ['an_feedW', mm(r.feedWMm, 3)],
@@ -216,14 +257,6 @@ export default {
         ['an_bw', `${fixed(r.bwFrac * 100, 2)} % · ${si(r.bwHz, 'Hz')}`],
         ['an_ground', `${fixed(r.groundWMm, 1)} × ${fixed(r.groundLMm, 1)} mm`],
         ['an_lambda', mm(r.lambda0Mm, 1)],
-      ]))
-      + formulaBlock([
-        'W = c/(2f0) · √(2/(εr+1))',
-        'εreff = (εr+1)/2 + (εr−1)/2 · (1 + 12h/W)^(−1/2)',
-        'ΔL = 0.412h · (εreff+0.3)(W/h+0.264) / ((εreff−0.258)(W/h+0.8))',
-        'L = c/(2f0√εreff) − 2ΔL',
-        'Rin ≈ 90·εr²/(εr−1)·(L/W)²,   y0 = (L/π)·acos(√(Z0/Rin))',
-        'BW ≈ 3.77·(εr−1)/εr² · (W/L)·(h/λ0)',
-      ], 'an_note', ['C. A. Balanis, Antenna Theory, 4th ed., ch. 14', 'D. R. Jackson & N. G. Alexopoulos, IEEE T-AP 1991']);
+      ]));
   },
 };

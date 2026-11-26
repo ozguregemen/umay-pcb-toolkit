@@ -129,7 +129,7 @@ export function solveFor(zOf, target, hRef) {
 
 /**
  * Impedance model of signal layer i. Returns { structure, up, dn, h, h1, h2,
- * c, b, er, t, zOf(w), zdOf(w, s), hRef } or { structure: 'none' }.
+ * c, b, er, t, zOf(w), zdOf(w, s), dOf(w), hRef } or { structure: 'none' }.
  * up/dn = indices of the nearest plane above/below (null if none);
  * h1 = gap to the plane below, h2 = gap to the plane above (impedance-page naming).
  */
@@ -155,6 +155,7 @@ export function layerModel(roles, cuUm, diel, i) {
     return {
       ...base, structure: sym ? 'stripline' : 'asymStripline', h1, h2, b: B, er, hRef: B,
       zOf, zdOf: (w, s) => diffStriplineZ(zOf(w), s, B), sOver: (s) => s / B, sMax: 1.5,
+      dOf: (w) => asymStripline(w, t, h1, h2, er).d,
     };
   }
   // One plane: outer layer → microstrip, inner layer → embedded microstrip.
@@ -168,6 +169,7 @@ export function layerModel(roles, cuUm, diel, i) {
     return {
       ...base, structure: 'microstrip', h, er, hRef: h,
       zOf, zdOf: (w, s) => diffMicrostripZ(zOf(w), s, h), sOver: (s) => s / h, sMax: 3,
+      dOf: (w) => microstrip(w, t, h, er).d,
     };
   }
   const cov = below ? span(diel, cuMm, 0, i) : span(diel, cuMm, i, n - 1);
@@ -178,6 +180,7 @@ export function layerModel(roles, cuUm, diel, i) {
   return {
     ...base, structure: 'embedded', h, c, er, hRef: h,
     zOf, zdOf: (w, s) => diffMicrostripZ(zOf(w), s, h), sOver: (s) => s / h, sMax: 3,
+    dOf: (w) => { const e = embeddedMicrostrip(w, t, h, c, er); return { ...e.d, erEff: e.erEff }; },
   };
 }
 
@@ -242,12 +245,14 @@ export function analyzeStackup(s) {
     delete sig.zOf;
     delete sig.zdOf;
     delete sig.sOver;
+    delete sig.dOf;
     if (m.structure === 'none') {
       noRef.push(i);
     } else {
       if (!adjacent) noAdj.push(i);
       sig.z0 = m.zOf(wMm);
       sig.zdiff = m.zdOf(wMm, sMm);
+      sig.detail = m.dOf(wMm); // intermediate values of the model, for showing the calculation step by step
       sig.w50 = solveFor(m.zOf, SE_TARGET, m.hRef);
       sig.wd = DIFF_TARGETS.map((zt) => solveFor((w) => m.zdOf(w, sMm), zt, m.hRef));
       const r = m.sOver(sMm);

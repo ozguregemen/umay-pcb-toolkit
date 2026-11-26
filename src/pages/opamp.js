@@ -2,7 +2,8 @@ import {
   stageGain, ratioFor, bestRatioPair, closedLoop, RESPONSES, sallenKeyLowPass, sallenKeyHighPass,
   sallenKeyMag, stageMag, openLoopMag, dB,
 } from '../engine/opamp.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, path, axes, wave, circle, opamp } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -87,6 +88,14 @@ const strings = {
     oa_gbwDev: 'fc’de GBW kaynaklı sapma',
     oa_upper: 'Üst köşe (GBW sınırı)',
     oa_gbwRatio: 'GBW / f0',
+    oa_stepRatio: 'Gereken direnç oranı',
+    oa_stepPair: 'Rin / Rg / R1 için, girilen değerin ±yarım dekad çevresindeki tüm standart değerler denenir; Rf (R2) her birinde en yakın standart değere yuvarlanır ve oran hatası en küçük olan çift seçilir. Burada seçilen çiftin yuvarlanmadan önceki değeri gösterilir.',
+    oa_stepF0t: 'Hedef kutup frekansı f0',
+    oa_stepC1: 'C1, seçilen kondansatör serisinde bu sınıra eşit ya da ondan büyük ilk standart değerdir.',
+    oa_stepSum: 'Toplam R1 + R2',
+    oa_stepProd: 'Çarpım R1 · R2',
+    oa_stepRound: 'R1 ve R2 ayrı ayrı bir alt ya da bir üst standart değere yuvarlanır; dört kombinasyondan f0 ve Q değeri hedefe en yakın olan seçilir. Sonraki adımlar bu standart değerlerle hesaplanır.',
+    oa_stepRoundDouble: 'Burada C1 tam olarak 4Q²·C2 olduğundan a² = 4b olur ve iki direnç de a/2’ye eşittir. R1 ve R2 ayrı ayrı bir alt ya da bir üst standart değere yuvarlanır; dört kombinasyondan f0 ve Q değeri hedefe en yakın olan seçilir. Sonraki adımlar bu standart değerlerle hesaplanır.',
     oa_noteGain: 'Op-amp, A0 = 100 dB ve tek kutuplu bir modelle (GBW) hesaplanır. Bant genişliği gürültü kazancıyla (1 + Rf/R) bölünür; eviren kuvvetlendiricide bu, sinyal kazancından 1 fazladır. Giriş ortak mod aralığı, ofset ve bias akımları dahil değildir; veri sayfasını kontrol edin.',
     oa_noteFilter: 'Birim kazançlı Sallen-Key: C1 her zaman 4Q²·C2’den büyük ilk standart değere yuvarlanır, R1 ve R2 bu kondansatörlerle tam hesaplanıp seçilen seriye yuvarlanır; sonuç fc ve Q yuvarlanmış değerlerle yeniden hesaplanır. fc, −3 dB noktasıdır (Chebyshev için de). Op-amp tek kutuplu GBW modeliyle çizilir.',
     warn_oa_clip: 'Çıkış {lo} … {hi} aralığına çıkmak istiyor ama op-amp yalnızca {slo} … {shi} arasında salınabilir: sinyal kırpılır. Kazancı, beslemeyi ya da giriş seviyesini (ör. referans/ofset ekleyerek) değiştirin.',
@@ -186,6 +195,14 @@ const strings = {
     oa_gbwDev: 'Deviation at fc due to GBW',
     oa_upper: 'Upper corner (GBW limit)',
     oa_gbwRatio: 'GBW / f0',
+    oa_stepRatio: 'Required resistor ratio',
+    oa_stepPair: 'For Rin / Rg / R1 every standard value within ±half a decade of the entered value is tried; Rf (R2) is rounded to the nearest standard value each time and the pair with the smallest ratio error is kept. This is the value of the chosen pair before rounding.',
+    oa_stepF0t: 'Target pole frequency f0',
+    oa_stepC1: 'C1 is the first standard value of the chosen capacitor series at or above this limit.',
+    oa_stepSum: 'Sum R1 + R2',
+    oa_stepProd: 'Product R1 · R2',
+    oa_stepRound: 'R1 and R2 are each rounded to the standard value just below or just above; of the four combinations the one whose f0 and Q are closest to the targets is kept. The following steps use these standard values.',
+    oa_stepRoundDouble: 'C1 is exactly 4Q²·C2 here, so a² = 4b and both resistors equal a/2. R1 and R2 are each rounded to the standard value just below or just above; of the four combinations the one whose f0 and Q are closest to the targets is kept. The following steps use these standard values.',
     oa_noteGain: 'The op amp is modelled with A0 = 100 dB and a single pole (GBW). The bandwidth is divided by the noise gain (1 + Rf/R), which for the inverting amplifier is one more than the signal gain. Input common-mode range, offset and bias currents are not included; check the datasheet.',
     oa_noteFilter: 'Unity-gain Sallen-Key: C1 is rounded up to the first standard value above 4Q²·C2, R1 and R2 are solved exactly for those capacitors and rounded to the chosen series, and fc and Q are recalculated with the rounded values. fc is the −3 dB point (also for Chebyshev). The op amp is drawn with a single-pole GBW model.',
     warn_oa_clip: 'The output wants to reach {lo} … {hi} but the op amp can only swing {slo} … {shi}: the signal clips. Change the gain, the supply or the input level (e.g. add a reference/offset).',
@@ -391,9 +408,11 @@ function computeGain(v, gbw) {
   let rf = v.rf;
   let rb = v.rb;
   let pair = null;
+  let kTarget = null;
   if (v.calc === 'des') {
     if (v.circ === 'noninv' && !(v.g > 1)) return { ok: false, errors: ['oa_gainLow'] };
-    pair = bestRatioPair(ratioFor(v.circ, v.g), v.rbase, v.ser);
+    kTarget = ratioFor(v.circ, v.g);
+    pair = bestRatioPair(kTarget, v.rbase, v.ser);
     if (!pair) return { ok: false, errors: ['oa_noPair'] };
     rf = pair.rf;
     rb = pair.rb;
@@ -412,7 +431,7 @@ function computeGain(v, gbw) {
   if (cl.gainErrPct < -1) warnings.push('oa_bwLow');
   if (v.fsig > cl.fpbw) warnings.push('oa_slew');
   if ([rf, rb].some((x) => x < 1e3 || x > 1e6)) warnings.push('oa_rRange');
-  return { ok: true, kind: 'gain', gbw, rf, rb, pair, ...st, ...cl, warnings, vars };
+  return { ok: true, kind: 'gain', gbw, rf, rb, pair, kTarget, ...st, ...cl, warnings, vars };
 }
 
 function computeFilter(v, gbw) {
@@ -438,6 +457,106 @@ function computeFilter(v, gbw) {
   return { ok: true, kind: 'filter', gbw, d, q, devDb, fUpper, errPct: ((d.fc - v.fc) / v.fc) * 100, warnings, vars };
 }
 
+// Values as they appear inside the calculation steps.
+const qV = (x) => tx(si(x, 'V'));
+const qR = (x) => tx(si(x, 'Ω'));
+const qHz = (x) => tx(si(x, 'Hz'));
+const qC = (x) => tx(si(x, 'F'));
+const SYM = { inv: ['R_{f}', 'R_{in}'], noninv: ['R_{f}', 'R_{g}'], diff: ['R_{2}', 'R_{1}'] };
+
+/** Steps of a gain stage: (design: ratio and pair,) gain, bandwidth, output range and the optional limits. */
+function workedGain(r, v) {
+  const des = v.calc === 'des';
+  const [RF, RB] = SYM[v.circ];
+  const ratio = `\\frac{${RF}}{${RB}}`;
+  const ratioNum = `\\frac{${qR(r.rf)}}{${qR(r.rb)}}`;
+  const gainSym = { inv: `G = −${ratio}`, noninv: `G = 1 + ${ratio}`, diff: `G = ${ratio}` }[v.circ];
+  const gainNum = { inv: `−${ratioNum}`, noninv: `1 + ${ratioNum}`, diff: ratioNum }[v.circ];
+  const G = tx(fmt(r.gain, 4));
+  const k = des ? tx(fmt(r.kTarget, 5)) : '';
+  const lo = Math.min(v.vinLo, v.vinHi);
+  const hi = Math.max(v.vinLo, v.vinHi);
+  // The engine sorts the two products; with a negative gain the smallest input gives the largest output.
+  const outOf = (vin, vout, sub) => ({ label: 'oa_out', sym: `V_{out} = G \\cdot V_{in,${sub}}`, num: `${G} \\cdot ${vin < 0 ? `(${qV(vin)})` : qV(vin)}`, res: qV(vout) });
+  const hasSr = Number.isFinite(r.fpbw);
+  const hasF = Number.isFinite(r.gainErrPct);
+  return steps([
+    des && (v.circ === 'noninv'
+      ? { label: 'oa_stepRatio', sym: `k = ${ratio} = G_{t} − 1`, num: `${tx(fmt(v.g, 5))} − 1`, res: k }
+      : { label: 'oa_stepRatio', sym: `k = ${ratio} = |G_{t}|`, res: k }),
+    des && { label: RF_LABEL[v.circ], sym: `${RF} = k \\cdot ${RB}`, num: `${k} \\cdot ${qR(r.rb)}`, res: qR(r.pair.rfExact), note: 'oa_stepPair' },
+    { label: des ? 'oa_gainGot' : 'oa_gain', sym: gainSym, num: gainNum, res: tx(`${fmt(r.gain, 4)} V/V`) },
+    { label: 'oa_bw', sym: `NG = 1 + ${ratio}, \\quad BW = \\frac{GBW}{NG}`, num: `\\frac{${qHz(r.gbw)}}{${tx(fmt(r.noiseGain, 4))}}`, res: qHz(r.bw) },
+    outOf(lo, r.gain < 0 ? r.outHi : r.outLo, 'min'),
+    outOf(hi, r.gain < 0 ? r.outLo : r.outHi, 'max'),
+    hasSr && { label: 'oa_fpbw', sym: 'V_{p} = \\frac{V_{out,max} − V_{out,min}}{2}, \\quad f_{FP} = \\frac{SR}{2π \\cdot V_{p}}',
+      num: `\\frac{${tx(`${fmt(v.slew)} V/µs`)}}{2π \\cdot ${qV(r.amp)}}`, res: qHz(r.fpbw) },
+    hasF && { label: 'oa_gainErr', sym: 'ε = \\frac{1}{\\sqrt{1 + (f / BW)^{2}}} − 1',
+      num: `\\frac{1}{\\sqrt{1 + {(\\frac{${qHz(v.fsig)}}{${qHz(r.bw)}})}^{2}}} − 1`, res: tx(signedPct(r.gainErrPct)) },
+  ], {
+    note: 'oa_noteGain',
+    where: [!des && [RF, RF_LABEL[v.circ], 'rf'], !des && [RB, RB_LABEL[v.circ], 'rb'], des && ['G_{t}', v.circ === 'inv' ? 'oa_gInv' : 'oa_g', 'g'],
+      ['GBW', 'oa_gbw', 'gbw'], ['V_{in,min}', 'oa_vinLo', 'vinLo'], ['V_{in,max}', 'oa_vinHi', 'vinHi'],
+      hasSr && ['SR', 'oa_slew', 'slew'], hasF && ['f', 'oa_fsig', 'fsig']],
+    refs: ['ADI MT-033, Voltage Feedback Op Amp Gain and Bandwidth', 'TI SLOD006, Op Amps for Everyone (Mancini, ed.), ch. 3–4', 'Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 4'],
+  });
+}
+
+/**
+ * Steps of a Sallen-Key section, in the order of the design functions: pole
+ * frequency for the wanted −3 dB point, component values, then f0, Q and fc
+ * again with the standard values (marked with a prime).
+ */
+function workedFilter(r, v) {
+  const d = r.d;
+  const lp = d.kind === 'lp';
+  const n4 = (x) => fmt(x, 4);
+  const xDef = 'p = 2 − \\frac{1}{Q^{2}}, \\quad x = \\sqrt{\\frac{p + \\sqrt{p^{2} + 4}}{2}}, \\quad ';
+  const w0 = `2π \\cdot ${qHz(d.f0Target)}`;
+  const rc = `\\sqrt{${qR(d.r1)} \\cdot ${qR(d.r2)} \\cdot ${qC(d.c1)} \\cdot ${qC(d.c2)}}`;
+  let design;
+  if (lp) {
+    // R1 + R2 and R1 · R2 in one prefix, with enough digits for the difference under the root.
+    const [scale, unit] = d.sumR >= 999950 ? [1e6, 'MΩ'] : d.sumR >= 999.95 ? [1e3, 'kΩ'] : [1, 'Ω'];
+    const a = tx(`${fmt(d.sumR / scale, 6)} ${unit}`);
+    const b = tx(`${fmt(d.prodR / scale ** 2, 6)} ${unit}²`);
+    // C1 = 4Q²·C2 exactly gives a double root: a² − 4b is zero (the engine clamps the rounding noise to zero).
+    const doubleRoot = d.r1Exact - d.r2Exact <= 1e-5 * d.sumR;
+    design = [
+      { label: 'oa_stepF0t', sym: `${xDef}f_{0} = \\frac{f_{c}}{x}`, num: `\\frac{${qHz(v.fc)}}{${n4(d.ratio)}}`, res: qHz(d.f0Target) },
+      { labelRaw: 'C1', sym: 'C_{1} \\ge 4 Q^{2} \\cdot C_{2}', num: `4 \\cdot ${n4(r.q)}^{2} \\cdot ${qC(d.c2)}`, res: qC(d.c1Min), note: 'oa_stepC1' },
+      { label: 'oa_stepSum', sym: 'a = R_{1} + R_{2} = \\frac{1}{2π f_{0} \\cdot Q \\cdot C_{2}}', num: `\\frac{1}{${w0} \\cdot ${n4(r.q)} \\cdot ${qC(d.c2)}}`, res: a },
+      { label: 'oa_stepProd', sym: 'b = R_{1} \\cdot R_{2} = \\frac{1}{(2π f_{0})^{2} \\cdot C_{1} \\cdot C_{2}}', num: `\\frac{1}{{(${w0})}^{2} \\cdot ${qC(d.c1)} \\cdot ${qC(d.c2)}}`, res: b },
+      { labelRaw: 'R1, R2', sym: 'R_{1,2} = \\frac{a \\pm \\sqrt{a^{2} − 4 b}}{2}',
+        num: doubleRoot ? `\\frac{${a} \\pm \\sqrt{0}}{2}` : `\\frac{${a} \\pm \\sqrt{{(${a})}^{2} − 4 \\cdot ${b}}}{2}`,
+        res: `${qR(d.r1Exact)}, \\quad ${qR(d.r2Exact)}`, note: doubleRoot ? 'oa_stepRoundDouble' : 'oa_stepRound' },
+    ];
+  } else {
+    design = [
+      { label: 'oa_stepF0t', sym: `${xDef}f_{0} = f_{c} \\cdot x`, num: `${qHz(v.fc)} \\cdot ${n4(d.ratio)}`, res: qHz(d.f0Target) },
+      { labelRaw: 'R1', sym: 'R_{1} = \\frac{1}{2 Q \\cdot 2π f_{0} \\cdot C}', num: `\\frac{1}{2 \\cdot ${n4(r.q)} \\cdot ${w0} \\cdot ${qC(d.c1)}}`, res: qR(d.r1Exact) },
+      { labelRaw: 'R2', sym: 'R_{2} = \\frac{2 Q}{2π f_{0} \\cdot C}', num: `\\frac{2 \\cdot ${n4(r.q)}}{${w0} \\cdot ${qC(d.c1)}}`, res: qR(d.r2Exact), note: 'oa_stepRound' },
+    ];
+  }
+  return steps([
+    ...design,
+    { label: 'oa_f0', sym: 'f_{0}′ = \\frac{1}{2π \\sqrt{R_{1} R_{2} C_{1} C_{2}}}', num: `\\frac{1}{2π \\cdot ${rc}}`, res: qHz(d.f0) },
+    { label: 'oa_qGot', sym: lp ? 'Q′ = \\frac{\\sqrt{R_{1} R_{2} C_{1} C_{2}}}{C_{2} \\cdot (R_{1} + R_{2})}' : 'Q′ = \\frac{\\sqrt{R_{1} R_{2} C_{1} C_{2}}}{R_{1} \\cdot (C_{1} + C_{2})}',
+      num: lp ? `\\frac{${rc}}{${qC(d.c2)} \\cdot (${qR(d.r1)} + ${qR(d.r2)})}` : `\\frac{${rc}}{${qR(d.r1)} \\cdot (${qC(d.c1)} + ${qC(d.c2)})}`, res: tx(n4(d.q)) },
+    { label: 'oa_fcGot', sym: lp ? 'f_{c}′ = f_{0}′ \\cdot x(Q′)' : 'f_{c}′ = \\frac{f_{0}′}{x(Q′)}',
+      num: lp ? `${qHz(d.f0)} \\cdot ${n4(d.ratioGot)}` : `\\frac{${qHz(d.f0)}}{${n4(d.ratioGot)}}`, res: qHz(d.fc) },
+  ], {
+    note: 'oa_noteFilter',
+    where: [['f_{c}', 'oa_fc', 'fc'], ['Q', 'oa_resp', 'resp'], lp ? ['C_{2}', 'oa_cLp', 'cap'] : ['C', 'oa_cHp', 'cap']],
+    refs: [
+      'TI SLOA024B, Analysis of the Sallen-Key Architecture (Karki)',
+      'TI SLOD006, Op Amps for Everyone, ch. 16 Active Filter Design Techniques (Kugelstadt)',
+      'TI SLOA049D, Active Low-Pass Filter Design (component selection)',
+      'IEC 60063:2015 (E-series)',
+    ],
+  });
+}
+
 function renderGain(r, v) {
   const des = v.calc === 'des';
   const gTxt = `${fmt(r.gain, 4)} <span class="u">V/V</span>`;
@@ -461,6 +580,7 @@ function renderGain(r, v) {
       : esc(t('oa_zinHigh'));
   return top
     + messages('warn', r.warnings, r.vars)
+    + workedGain(r, v)
     + block('oa_detailsTitle', rows([
       [RF_LABEL[v.circ], si(r.rf, 'Ω')],
       [RB_LABEL[v.circ], si(r.rb, 'Ω')],
@@ -473,19 +593,7 @@ function renderGain(r, v) {
       ['oa_swing', `${esc(si(r.swingLo, 'V', 3))} … ${esc(si(r.swingHi, 'V', 3))}`],
       Number.isFinite(r.fpbw) && ['oa_fpbw', si(r.fpbw, 'Hz')],
       Number.isFinite(r.gainErrPct) && ['oa_gainErr', signedPct(r.gainErrPct)],
-    ]) + (v.circ === 'diff' ? `<p class="note">${esc(t('oa_diffInfo'))}</p>` : ''))
-    + formulaBlock([
-      ...({
-        inv: ['G = −Rf / Rin,   noise gain NG = 1 + Rf / Rin', 'Zin = Rin'],
-        noninv: ['G = NG = 1 + Rf / Rg', 'Zin ≈ op-amp input impedance'],
-        diff: ['Vout = (R2 / R1) · (V2 − V1)   with R3 = R1, R4 = R2', 'NG = 1 + R2 / R1,   Zin(V1) = R1,   Zin(V2) = R1 + R2'],
-      })[v.circ],
-      'BW = GBW / NG   (single-pole op amp: A(f) = A0 / (1 + j·f·A0 / GBW))',
-      'H(f) = G / (1 + NG / A(f))',
-      'swing: V− + V_hr ≤ Vout ≤ V+ − V_hr',
-      'full-power bandwidth = SR / (2π · Vp),   Vp = (Vout,max − Vout,min) / 2',
-      ...(des ? ['design: Rf / R = |G| (inverting, difference) or G − 1 (non-inverting), best E-series pair'] : []),
-    ], 'oa_noteGain', ['ADI MT-033, Voltage Feedback Op Amp Gain and Bandwidth', 'TI SLOD006, Op Amps for Everyone (Mancini, ed.), ch. 3–4', 'Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 4']);
+    ]) + (v.circ === 'diff' ? `<p class="note">${esc(t('oa_diffInfo'))}</p>` : ''));
 }
 
 function renderFilter(r, v) {
@@ -497,6 +605,7 @@ function renderFilter(r, v) {
     ['oa_qGot', `${fmt(d.q, 3)}`, esc(t('oa_target', { x: fmt(r.q, 4) }))],
   ])
     + messages('warn', r.warnings, r.vars)
+    + workedFilter(r, v)
     + block('oa_compTitle', rows([
       ['R1', `${si(d.r1, 'Ω')} · ${exact(d.r1Exact, 'Ω')}`, true, true],
       ['R2', `${si(d.r2, 'Ω')} · ${exact(d.r2Exact, 'Ω')}`, true, true],
@@ -509,25 +618,7 @@ function renderFilter(r, v) {
       ['oa_gbwRatio', fmt(r.gbw / d.f0, 3)],
       ['oa_gbwDev', dbTxt(r.devDb)],
       Number.isFinite(r.fUpper) && ['oa_upper', si(r.fUpper, 'Hz', 3)],
-    ]))
-    + formulaBlock(lp ? [
-      'H(s) = 1 / (1 + s·C2·(R1 + R2) + s²·R1·R2·C1·C2)',
-      'f0 = 1 / (2π · √(R1·R2·C1·C2)),   Q = √(R1·R2·C1·C2) / (C2 · (R1 + R2))',
-      'C1 ≥ 4Q² · C2;   R1,2 = (a ± √(a² − 4b)) / 2,   a = 1 / (ω0·Q·C2),   b = 1 / (ω0²·C1·C2)',
-      'fc = f0 · x,   x² = [(2 − 1/Q²) + √((2 − 1/Q²)² + 4)] / 2',
-      'Q: Butterworth 1/√2 · Bessel 1/√3 · Chebyshev from the ripple (0.5 dB: 0.864, 1 dB: 0.956)',
-    ] : [
-      'H(s) = s²·R1·R2·C1·C2 / (1 + s·R1·(C1 + C2) + s²·R1·R2·C1·C2)',
-      'f0 = 1 / (2π · √(R1·R2·C1·C2)),   Q = √(R1·R2·C1·C2) / (R1 · (C1 + C2))',
-      'C1 = C2 = C:   R1 = 1 / (2Q·ω0·C),   R2 = 2Q / (ω0·C)',
-      'fc = f0 / x,   x² = [(2 − 1/Q²) + √((2 − 1/Q²)² + 4)] / 2',
-      'Q: Butterworth 1/√2 · Bessel 1/√3 · Chebyshev from the ripple (0.5 dB: 0.864, 1 dB: 0.956)',
-    ], 'oa_noteFilter', [
-      'TI SLOA024B, Analysis of the Sallen-Key Architecture (Karki)',
-      'TI SLOD006, Op Amps for Everyone, ch. 16 Active Filter Design Techniques (Kugelstadt)',
-      'TI SLOA049D, Active Low-Pass Filter Design (component selection)',
-      'IEC 60063:2015 (E-series)',
-    ]);
+    ]));
 }
 
 export default {

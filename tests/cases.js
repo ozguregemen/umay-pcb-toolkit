@@ -17,9 +17,10 @@ import { cases as search } from './cases/search.js';
 import { cases as math } from './cases/math.js';
 import { cases as tolerance } from './cases/tolerance.js';
 import { cases as powertree } from './cases/powertree.js';
+import { cases as arith } from './cases/arith.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
-  ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree,
+  ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith,
 ];

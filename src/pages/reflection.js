@@ -1,5 +1,6 @@
 import { gammaFromLoad, fromGammaMag, gammaFromVswr, gammaFromReturnLoss } from '../engine/rf.js';
-import { heroes, rows, block, formulaBlock } from '../ui/calculator.js';
+import { heroes, rows, block, steps } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed } from '../ui/format.js';
 import { svg, wire, rect, circle, path, text, axes, wave, dimH, dimV, blockArrow } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -18,6 +19,7 @@ const strings = {
     rf_vswrIn: 'VSWR',
     rf_rlIn: 'Geri dönüş kaybı',
     rf_gIn: 'Yansıma katsayısı genliği |Γ|',
+    rf_gammaC: 'Yansıma katsayısı Γ',
     rf_angle: 'Γ açısı',
     rf_ml: 'Uyumsuzluk kaybı',
     rf_refl: 'Yansıyan güç',
@@ -43,6 +45,7 @@ const strings = {
     rf_vswrIn: 'VSWR',
     rf_rlIn: 'Return loss',
     rf_gIn: 'Reflection coefficient magnitude |Γ|',
+    rf_gammaC: 'Reflection coefficient Γ',
     rf_angle: 'Angle of Γ',
     rf_ml: 'Mismatch loss',
     rf_refl: 'Reflected power',
@@ -127,6 +130,49 @@ function diagram(v, u, r) {
 
 const is = (m) => (v) => v.mode === m;
 
+/**
+ * Calculation steps: |Γ| from the chosen input (for a load, the complex Γ
+ * first), then every figure that follows from |Γ|. A figure that is the input
+ * itself, or infinite (matched or fully reflecting), has no step.
+ */
+function worked(r, v) {
+  const n = (x, sig = 5) => tx(fmt(x || 0, sig).replace('-', '−'));
+  const dB = (x) => tx(`${fmt(x || 0, 4).replace('-', '−')} dB`);
+  const ohm = (x) => tx(`${fmt(x, 5)} Ω`);
+  // Near total reflection 1 − |Γ| is tiny: show enough digits of |Γ| for it.
+  const gs = Math.min(12, Math.max(5, Math.ceil(-Math.log10(Math.max(1 - r.gamma, 1e-12))) + 4));
+  const G = n(r.gamma, gs);
+  const list = [];
+  if (v.mode === 'load') {
+    const { re, im } = r.load;
+    const reactive = v.x !== 0;
+    const sign = (x) => (x < 0 ? '−' : '+');
+    const zl = reactive ? `${ohm(v.r)} ${sign(v.x)} j ${ohm(Math.abs(v.x))}` : ohm(v.r);
+    list.push(
+      { label: 'rf_gammaC', sym: 'Γ = \\frac{Z_L − Z_0}{Z_L + Z_0}', num: `\\frac{${zl} − ${ohm(v.z0)}}{${zl} + ${ohm(v.z0)}}`,
+        res: reactive ? `${n(re, gs)} ${sign(im)} j ${n(Math.abs(im), gs)}` : n(re, gs) },
+      { label: 'rf_gIn', sym: '|Γ| = \\sqrt{(Re\\,Γ)^{2} + (Im\\,Γ)^{2}}', num: `\\sqrt{{(${n(re, gs)})}^{2} + {(${n(im, gs)})}^{2}}`, res: G },
+    );
+  } else if (v.mode === 'vswr') {
+    list.push({ label: 'rf_gIn', sym: '|Γ| = \\frac{VSWR − 1}{VSWR + 1}', num: `\\frac{${n(v.vswr, 6)} − 1}{${n(v.vswr, 6)} + 1}`, res: G });
+  } else if (v.mode === 'rl') {
+    list.push({ label: 'rf_gIn', sym: '|Γ| = 10^{−RL / 20}', num: `10^{−\\frac{${tx(`${fmt(v.rl, 6)} dB`)}}{20}}`, res: G });
+  }
+  list.push(
+    v.mode !== 'vswr' && Number.isFinite(r.vswr) && { label: 'rf_vswr', sym: 'VSWR = \\frac{1 + |Γ|}{1 − |Γ|}', num: `\\frac{1 + ${G}}{1 − ${G}}`, res: n(r.vswr, 4) },
+    v.mode !== 'rl' && Number.isFinite(r.returnLossDb) && { label: 'rf_rl', sym: 'RL = −20 \\cdot \\log_{10}|Γ|', num: `−20 \\cdot \\log_{10}(${G})`, res: dB(r.returnLossDb) },
+    Number.isFinite(r.mismatchLossDb) && { label: 'rf_ml', sym: 'ML = −10 \\cdot \\log_{10}(1 − |Γ|^{2})', num: `−10 \\cdot \\log_{10}(1 − {${G}}^{2})`, res: dB(r.mismatchLossDb) },
+    { label: 'rf_refl', sym: 'P_{refl} = |Γ|^{2}', num: `{${G}}^{2}`, res: tx(`${fmt(r.reflectedPct, 4)} %`) },
+  );
+  const where = {
+    load: [['Z_L = R + jX', 'rf_load'], ['Z_0', 'rf_z0', 'z0'], ['R', 'rf_r', 'r'], ['X', 'rf_x', 'x']],
+    vswr: [['VSWR', 'rf_vswrIn', 'vswr']],
+    rl: [['RL', 'rf_rlIn', 'rl']],
+    g: [['|Γ|', 'rf_gIn', 'g']],
+  }[v.mode];
+  return steps(list, { note: 'rf_note', where, refs: ['D. M. Pozar, Microwave Engineering, 4th ed., §2.3', 'R. Ludwig & G. Bogdanov, RF Circuit Design, 2nd ed., ch. 2'] });
+}
+
 export default {
   diagram,
   id: 'reflection',
@@ -151,33 +197,31 @@ export default {
   compute(v) {
     let g;
     let angle = null;
+    let load = null; // complex Γ of a load, for the calculation steps
     if (v.mode === 'load') {
       const c = gammaFromLoad(v.z0, v.r, v.x);
       g = c.mag;
       angle = c.angleDeg;
+      load = { re: c.re, im: c.im };
     } else if (v.mode === 'vswr') g = gammaFromVswr(v.vswr);
     else if (v.mode === 'rl') g = gammaFromReturnLoss(v.rl);
     else g = v.g;
-    return { ok: true, ...fromGammaMag(g), angle };
+    return { ok: true, ...fromGammaMag(g), angle, load };
   },
 
-  render(r) {
+  render(r, v) {
     const db = (x) => (Number.isFinite(x) ? `${fixed(x, 2)} dB` : '∞');
     return heroes([
       ['rf_rl', Number.isFinite(r.returnLossDb) ? `${fixed(r.returnLossDb, 2)} <span class="u">dB</span>` : '∞'],
       ['rf_vswr', Number.isFinite(r.vswr) ? `${fixed(r.vswr, 3)} <span class="u">: 1</span>` : '∞'],
     ])
+      + worked(r, v)
       + block('results', rows([
         ['rf_gIn', fmt(r.gamma, 4)],
         r.angle !== null && ['rf_angle', `${fixed(r.angle, 1)}°`],
         ['rf_ml', db(r.mismatchLossDb)],
         ['rf_refl', `${fmt(r.reflectedPct, 4)} %`],
         ['rf_trans', `${fmt(r.transmittedPct, 4)} %`],
-      ]))
-      + formulaBlock([
-        'Γ = (ZL − Z0) / (ZL + Z0)',
-        'VSWR = (1 + |Γ|) / (1 − |Γ|)',
-        'RL = −20·log10|Γ|        ML = −10·log10(1 − |Γ|²)',
-      ], 'rf_note', ['D. M. Pozar, Microwave Engineering, 4th ed., §2.3', 'R. Ludwig & G. Bogdanov, RF Circuit Design, 2nd ed., ch. 2']);
+      ]));
   },
 };

@@ -6,7 +6,8 @@ import {
   SOURCES, ROW_KINDS, GENERAL_HS, INTERFACES, PCIE_GENS, DDR_GROUPS, ETH_PARTS,
   ruleSetFor, rowKey, sourcesOf, erEffective, delayPsPerMm, convertSkew, limitIn, withinLimit,
 } from '../engine/interfaces.js';
-import { heroes, rows, block, formulaBlock, checks } from '../ui/calculator.js';
+import { heroes, rows, block, steps, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { esc } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
 import { t, getLang } from '../i18n.js';
@@ -85,6 +86,9 @@ const strings = {
     if_input: 'Girilen değer',
     if_lim_pair: 'Çift içi sınır',
     if_lim_group: 'Grup sınırı',
+    if_wC: 'Işığın boşluktaki hızı',
+    if_wDt: 'Zaman kayması (skew)',
+    if_wDl: 'Uzunluk farkı',
     if_ref_dqs: 'DQ/DM → DQS',
     if_ref_ck: 'adres/komut → CK',
     if_ref_dqsCk: 'DQS → CK',
@@ -356,6 +360,9 @@ const strings = {
     if_input: 'Your value',
     if_lim_pair: 'Intra-pair limit',
     if_lim_group: 'Group limit',
+    if_wC: 'Speed of light in vacuum',
+    if_wDt: 'Skew (time difference)',
+    if_wDl: 'Length difference',
     if_ref_dqs: 'DQ/DM → DQS',
     if_ref_ck: 'address/command → CK',
     if_ref_dqsCk: 'DQS → CK',
@@ -654,6 +661,51 @@ function impedanceLink(set, v) {
 }
 
 const badges = (ids) => ids.filter((id) => SOURCES[id]).map((id) => `<span class="badge">${esc(SOURCES[id].short)}</span>`).join(' ');
+
+/**
+ * Calculation steps of the part of this page that is computed: εeff and the
+ * delay of the board, then every limit of the interface and the reader's own
+ * value converted between skew and length. The rule tables are sourced data.
+ */
+function worked(r, v) {
+  const tpd = r.tpd;
+  const T = tx(`${num(tpd, 5)} ps/mm`);
+  const eeff = num(r.erEff, 5);
+  const perMil = tx(`${num(0.0254)} mm/mil`);
+  const q = (text) => tx(text.replace(/-/g, '−')); // a value with its unit, with a real minus sign
+  const len = (c) => `${q(`${num(c.mm, 4)} mm`)} = ${q(`${num(c.mil, 4)} mil`)}`;
+  // One conversion: ps → length (divide by t_pd), mm or mil → ps (multiply).
+  const convert = (text, unit, res) => (unit === 'ps'
+    ? { sym: 'ΔL = \\frac{Δt}{t_{pd}}', num: `\\frac{${q(`${text} ps`)}}{${T}}`, res }
+    : { sym: 'Δt = ΔL \\cdot t_{pd}', num: `${q(`${text} ${unit}`)}${unit === 'mil' ? ` \\cdot ${perMil}` : ''} \\cdot ${T}`, res });
+  const limitSteps = r.set.limits.map((l) => {
+    const c = limitIn(l, tpd);
+    const labelRaw = `${t(l.id === 'pair' ? 'if_lim_pair' : 'if_lim_group')}${l.ref ? ` (${limitName(l)})` : ''}`;
+    if (c.window) {
+      const res = l.unit === 'ps' ? q(`${signed(c.min.mm, 4)} … ${signed(c.max.mm, 4)} mm`) : q(`${signed(c.min.ps, 4)} … ${signed(c.max.ps, 4)} ps`);
+      return { labelRaw, ...convert(`${signed(l.min, 4)} … ${signed(l.max, 4)}`, l.unit, res) };
+    }
+    const s = convert(num(l.value, 4), l.unit, l.unit === 'ps' ? len(c.max) : q(`${num(c.max.ps, 4)} ps`));
+    return l.pm ? { labelRaw, sym: s.sym, num: `± ${s.num}`, res: `± ${s.res.replace(' = ', ' = ± ')}` } : { labelRaw, ...s };
+  });
+  const i = r.input;
+  return steps([
+    v.st === 'microstrip' && { label: 'if_erUsed', sym: `ε_{eff} = ${num(0.475)} \\cdot ε_r + ${num(0.67)}`, num: `${num(0.475)} \\cdot ${num(v.er, 5)} + ${num(0.67)}`, res: eeff },
+    v.st === 'stripline' && { label: 'if_erUsed', sym: 'ε_{eff} = ε_r', res: eeff },
+    { label: 'if_tpd', sym: 't_{pd} = \\frac{\\sqrt{ε_{eff}}}{c}', num: `\\frac{\\sqrt{${eeff}}}{${tx(`${num(299.792458, 6)} mm/ns`)}}`, res: `${T} = ${tx(`${num(tpd * 25.4, 5)} ps/in`)}` },
+    ...limitSteps,
+    i && { label: 'if_input', ...convert(num(i.value, 6), i.unit, i.unit === 'ps' ? len(i) : q(`${num(i.ps, 4)} ps`)) },
+  ], {
+    note: 'if_note',
+    where: [
+      v.st === 'known' ? ['ε_{eff}', 'if_erEff', 'er'] : ['ε_r', 'if_er', 'er'],
+      ['c', 'if_wC'],
+      (i || limitSteps.length > 0) && ['Δt', 'if_wDt', i && i.unit === 'ps' ? 'x' : undefined],
+      (i || limitSteps.length > 0) && ['ΔL', 'if_wDl', i && i.unit !== 'ps' ? 'x' : undefined],
+    ],
+    refs: [`${SOURCES.mt094.short} (IPC-2141A)`, SOURCES.an958.short, 'IPC-2141A'],
+  });
+}
 
 // Styles for the rules card live in assets/app.css ("Interface rules").
 
@@ -1009,6 +1061,8 @@ export default {
         : checks([[null, esc(yours), '']]);
     }
 
+    html += worked(r, v);
+
     // Link to the impedance calculator
     if (r.link) {
       const st = t(`if_imp_${r.link.st}`);
@@ -1026,14 +1080,6 @@ export default {
     ]));
 
     html += block('if_sources', sourceList(sourcesOf(s, s.hs ? GENERAL_HS : [])) + `<p class="note">${esc(t('if_disclaimer'))}</p>`);
-
-    html += formulaBlock([
-      'εeff = εr                        (stripline)',
-      'εeff ≈ 0.475·εr + 0.67           (microstrip, IPC-2141A)',
-      't_pd = √εeff / c  →  3.3356·√εeff ps/mm  (84.72·√εeff ps/in)',
-      'skew = ΔL · t_pd,     ΔL = skew / t_pd',
-      '1 mil = 0.0254 mm',
-    ], 'if_note', [`${SOURCES.mt094.short} (IPC-2141A)`, SOURCES.an958.short, 'IPC-2141A']);
     return html;
   },
 };

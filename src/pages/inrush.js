@@ -1,5 +1,6 @@
 import { hotPlug, softStart, gateRamp, ntcLimiter, rlcStep } from '../engine/inrush.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml } from '../ui/format.js';
 import { svg, text, path, axes, wave } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -79,6 +80,12 @@ const strings = {
     iz_withNtc: 'NTC ile tepe akım',
     iz_ntcE: 'NTC’nin soğuracağı enerji ≈ ½·C·V²',
     iz_pss: 'Sürekli çalışmada NTC kaybı I²·R',
+    iz_alpha: 'Sönüm katsayısı α',
+    iz_w0: 'Doğal açısal frekans ω0',
+    iz_wd: 'Sönümlü açısal frekans ωd',
+    iz_s1: 'Karakteristik kök s1',
+    iz_s2: 'Karakteristik kök s2',
+    iz_rSer: 'NTC dışındaki seri direnç',
     warn_iz_overshoot: 'Kondansatör gerilimi beslemeyi belirgin şekilde aşıyor (az sönümlü LC). Gerilim sınırlarını kontrol edin; seri direnç, ESR’si yüksek bir bulk kondansatör veya TVS ekleyin (LT AN88).',
     warn_iz_ntcNotNeeded: 'Kaynak ve ESR direnci tek başına akımı hedefin altında tutuyor; NTC gerekmez.',
     warn_iz_ntcSmall: 'Seçilen R25, hedef tepe akım için gereken en küçük değerden küçük.',
@@ -164,6 +171,12 @@ const strings = {
     iz_withNtc: 'Peak current with NTC',
     iz_ntcE: 'Energy the NTC must absorb ≈ ½·C·V²',
     iz_pss: 'NTC loss in steady state I²·R',
+    iz_alpha: 'Damping coefficient α',
+    iz_w0: 'Natural angular frequency ω0',
+    iz_wd: 'Damped angular frequency ωd',
+    iz_s1: 'Characteristic root s1',
+    iz_s2: 'Characteristic root s2',
+    iz_rSer: 'Series resistance without the NTC',
     warn_iz_overshoot: 'The capacitor voltage clearly overshoots the supply (underdamped LC). Check voltage ratings; add series resistance, a bulk capacitor with higher ESR or a TVS (LT AN88).',
     warn_iz_ntcNotNeeded: 'The source and ESR resistance alone keep the current below the target; no NTC is needed.',
     warn_iz_ntcSmall: 'The chosen R25 is below the minimum needed for the target peak current.',
@@ -266,6 +279,147 @@ function diagram(v, u, r) {
   return svg(440, 234, b, t('iz_dgAria'), { wide: true });
 }
 
+const REFS = ['TI SLVA670 “Managing Inrush Current”', 'TI TPS2490 datasheet (SLVS503), gate capacitor dV/dt control',
+  'TDK/EPCOS AN “NTC thermistors for inrush current limiting”', 'Linear Technology AN88'];
+
+// Values as they appear inside the calculation steps (negative ones with a real minus sign).
+const q = (x, unit) => tx(si(x, unit).replace(/^-/, '−'));
+const rate = (x, unit, sig = 4) => tx(`${fmt(x, sig).replace(/^-/, '−')} ${unit}`);
+const HALF = '\\frac{1}{2}';
+
+/**
+ * Hot plug: the series resistance, then the plain RC case or the series RLC
+ * step response in the branch (under-, critically or overdamped) the engine took.
+ */
+function plugSteps(r, v) {
+  const V = q(v.v, 'V');
+  const C = q(v.c, 'F');
+  const R = q(r.r, 'Ω');
+  const withL = r.type !== 'rc';
+  const list = [{ label: 'iz_rTot', sym: 'R = R_{src} + ESR + R_{tr}', num: `${q(n0(v.rsrc), 'Ω')} + ${q(n0(v.esr), 'Ω')} + ${q(n0(v.rtr), 'Ω')}`, res: R }];
+  if (!withL) {
+    list.push(
+      { label: 'iz_ipeak', sym: 'I_{pk} = \\frac{V}{R}', num: `\\frac{${V}}{${R}}`, res: q(r.iPeak, 'A') },
+      { label: 'iz_tau', sym: 'τ = R \\cdot C', num: `${R} \\cdot ${C}`, res: q(r.tau, 's') },
+    );
+  } else {
+    const L = q(v.l, 'H');
+    // 1 − ζ², α² − ω0² and s1 − s2 magnify rounded values close to critical damping,
+    // so the rates and ζ keep six digits here.
+    const a = rate(r.alpha, 's⁻¹', 6);
+    const w0 = rate(r.w0, 'rad/s', 6);
+    const zeta = tx(fmt(r.zeta, 6));
+    const tPk = q(r.tPeak, 's');
+    list.push(
+      { label: 'iz_alpha', sym: 'α = \\frac{R}{2 \\cdot L}', num: `\\frac{${R}}{2 \\cdot ${L}}`, res: a },
+      { label: 'iz_w0', sym: 'ω_0 = \\frac{1}{\\sqrt{L \\cdot C}}', num: `\\frac{1}{\\sqrt{${L} \\cdot ${C}}}`, res: w0 },
+      { label: 'iz_zeta', sym: 'ζ = \\frac{α}{ω_0}', num: `\\frac{${a}}{${w0}}`, res: zeta },
+    );
+    if (r.type === 'under') {
+      const wd = rate(r.wd, 'rad/s', 6);
+      list.push(
+        { label: 'iz_wd', sym: 'ω_d = ω_0 \\cdot \\sqrt{1 − ζ^{2}}', num: `${w0} \\cdot \\sqrt{1 − {${zeta}}^{2}}`, res: wd },
+        // Without resistance atan(ω_d/α) is a quarter turn.
+        r.alpha > 0
+          ? { label: 'iz_tpk', sym: 't_{pk} = \\frac{\\atan\\frac{ω_d}{α}}{ω_d}', num: `\\frac{\\atan\\frac{${wd}}{${a}}}{${wd}}`, res: tPk }
+          : { label: 'iz_tpk', sym: 't_{pk} = \\frac{π}{2 \\cdot ω_d}', num: `\\frac{π}{2 \\cdot ${wd}}`, res: tPk },
+        { label: 'iz_ipeak', sym: 'I_{pk} = \\frac{V}{ω_d \\cdot L} \\cdot e^{−α \\cdot t_{pk}} \\cdot \\sin(ω_d \\cdot t_{pk})',
+          num: `\\frac{${V}}{${wd} \\cdot ${L}} \\cdot e^{−${a} \\cdot ${tPk}} \\cdot \\sin(${wd} \\cdot ${tPk})`, res: q(r.iPeak, 'A') },
+        { label: 'iz_vmax', sym: 'V_{C,max} = V \\cdot (1 + e^{−\\frac{α \\cdot π}{ω_d}})', num: `${V} \\cdot (1 + e^{−\\frac{${a} \\cdot π}{${wd}}})`, res: q(r.vMax, 'V') },
+      );
+    } else if (r.type === 'critical') {
+      list.push(
+        { label: 'iz_tpk', sym: 't_{pk} = \\frac{1}{α}', num: `\\frac{1}{${a}}`, res: tPk },
+        { label: 'iz_ipeak', sym: 'I_{pk} = \\frac{V}{L} \\cdot t_{pk} \\cdot e^{−α \\cdot t_{pk}}', num: `\\frac{${V}}{${L}} \\cdot ${tPk} \\cdot e^{−${a} \\cdot ${tPk}}`, res: q(r.iPeak, 'A') },
+      );
+    } else {
+      const s1 = rate(r.s1, 's⁻¹', 6);
+      const s2 = rate(r.s2, 's⁻¹', 6);
+      const root = `\\sqrt{{(${a})}^{2} − {(${w0})}^{2}}`;
+      list.push(
+        { label: 'iz_s1', sym: 's_1 = −α + \\sqrt{α^{2} − ω_0^{2}}', num: `−${a} + ${root}`, res: s1 },
+        { label: 'iz_s2', sym: 's_2 = −α − \\sqrt{α^{2} − ω_0^{2}}', num: `−${a} − ${root}`, res: s2 },
+        { label: 'iz_tpk', sym: 't_{pk} = \\frac{\\ln\\frac{s_2}{s_1}}{s_1 − s_2}', num: `\\frac{\\ln\\frac{${s2}}{${s1}}}{${s1} − (${s2})}`, res: tPk },
+        { label: 'iz_ipeak', sym: 'I_{pk} = \\frac{V}{L \\cdot (s_1 − s_2)} \\cdot (e^{s_1 \\cdot t_{pk}} − e^{s_2 \\cdot t_{pk}})',
+          num: `\\frac{${V}}{${L} \\cdot (${s1} − (${s2}))} \\cdot (e^{${s1} \\cdot ${tPk}} − e^{${s2} \\cdot ${tPk}})`, res: q(r.iPeak, 'A') },
+      );
+    }
+  }
+  list.push({ label: 'iz_energy', sym: `E = ${HALF} \\cdot C \\cdot V^{2}`, num: `${HALF} \\cdot ${C} \\cdot {(${V})}^{2}`, res: q(r.energy, 'J') });
+  return steps(list, {
+    note: 'iz_note',
+    where: [['V', 'iz_v', 'v'], ['C', 'iz_c', 'c'], withL && ['L', 'iz_l', 'l'], ['R_{src}', 'iz_rsrc', 'rsrc'], ['ESR', 'iz_esr', 'esr'], ['R_{tr}', 'iz_rtr', 'rtr']],
+    refs: REFS,
+  });
+}
+
+/** NTC limiter: the peak voltage, the resistance already in the path, the minimum R25 and the peak current that results. */
+function ntcSteps(r, v) {
+  const ac = isAc(v);
+  const Vpk = q(r.vPk, 'V');
+  const C = q(v.c, 'F');
+  const Rs = q(r.rSeries, 'Ω');
+  // The NTC value in use: the chosen part, else the minimum (none when the path resistance alone is enough).
+  const chosen = v.r25 > 0;
+  const ntc = chosen ? 'R_{25}' : r.rUse > 0 ? 'R_{25,min}' : '';
+  const rTot = ntc ? [`${ntc} + R_s`, `${q(r.rUse, 'Ω')} + ${Rs}`] : ['R_s', Rs];
+  const limited = Number.isFinite(r.iPeak);
+  const steady = r.pSs !== undefined;
+  return steps([
+    ac && { label: 'iz_vpk', sym: 'V_{pk} = \\sqrt{2} \\cdot V_{rms}', num: `\\sqrt{2} \\cdot ${q(v.v, 'V')}`, res: Vpk },
+    { label: 'iz_rSer', sym: 'R_s = R_{src} + R_{tr} + ESR', num: `${q(n0(v.rsrc), 'Ω')} + ${q(n0(v.rtr), 'Ω')} + ${q(n0(v.esr), 'Ω')}`, res: Rs },
+    { label: 'iz_r25min', sym: 'R_{25,min} = \\frac{V_{pk}}{I_{max}} − R_s', num: `\\frac{${Vpk}}{${q(v.ipk, 'A')}} − ${Rs}`, res: q(r.r25Min, 'Ω') },
+    limited && { label: 'iz_withNtc', sym: `I_{pk} = \\frac{V_{pk}}{${rTot[0]}}`, num: `\\frac{${Vpk}}{${rTot[1]}}`, res: q(r.iPeak, 'A') },
+    { label: 'iz_ntcE', sym: `E = ${HALF} \\cdot C \\cdot V_{pk}^{2}`, num: `${HALF} \\cdot ${C} \\cdot {(${Vpk})}^{2}`, res: q(r.energy, 'J') },
+    limited && { label: 'iz_tau', sym: ntc ? `τ = (${rTot[0]}) \\cdot C` : 'τ = R_s \\cdot C', num: ntc ? `(${rTot[1]}) \\cdot ${C}` : `${Rs} \\cdot ${C}`, res: q(r.tau, 's') },
+    steady && { label: 'iz_pss', sym: 'P_{ss} = I_{ss}^{2} \\cdot R_{hot}', num: `{(${q(v.iss, 'A')})}^{2} \\cdot ${q(v.rhot, 'Ω')}`, res: q(r.pSs, 'W') },
+  ], {
+    note: 'iz_note',
+    where: [ac ? ['V_{rms}', 'iz_vrms', 'v'] : ['V_{pk}', 'iz_v', 'v'], ['C', 'iz_c', 'c'], ['I_{max}', 'iz_ipk', 'ipk'],
+      ['R_{src}', 'iz_rsrc', 'rsrc'], ['R_{tr}', 'iz_rtr', 'rtr'], ['ESR', 'iz_esr', 'esr'], chosen && ['R_{25}', 'iz_r25', 'r25'],
+      steady && ['I_{ss}', 'iz_iss', 'iss'], steady && ['R_{hot}', 'iz_rhot', 'rhot']],
+    refs: REFS,
+  });
+}
+
+/** Controlled ramp (a soft-start time, or a gate capacitor that sets dV/dt): charging current and the stress on the pass element. */
+function rampSteps(r, v, u) {
+  const gate = v.mode === 'gate';
+  const V = q(v.v, 'V');
+  const C = q(v.c, 'F');
+  const il = n0(v.iload);
+  const slew = rate(r.slew / 1000, 'V/ms');
+  const tR = q(r.tRamp, 's');
+  const iC = q(r.iCap, 'A');
+  const iGate = gate && q(v.ig * (u.ig === 'mA' ? 1e-3 : 1e-6), 'A');
+  const cgd = q(n0(v.cgd), 'F');
+  const target = gate && r.cGateFor !== undefined;
+  const eCap = [`${HALF} \\cdot C \\cdot V^{2}`, `${HALF} \\cdot ${C} \\cdot {(${V})}^{2}`];
+  return steps([
+    gate
+      ? { label: 'iz_slew', sym: '\\frac{dV}{dt} = \\frac{I_{GATE}}{C_G + C_{GD}}', num: `\\frac{${iGate}}{${q(v.cg, 'F')} + ${cgd}}`, res: slew }
+      : { label: 'iz_slew', sym: '\\frac{dV}{dt} = \\frac{V}{t_{ramp}}', num: `\\frac{${V}}{${tR}}`, res: slew },
+    gate && { label: 'iz_tRamp', sym: 't_{ramp} = \\frac{V}{dV/dt}', num: `\\frac{${V}}{${slew}}`, res: tR },
+    { label: 'iz_icap', sym: 'I_C = C \\cdot \\frac{dV}{dt}', num: `${C} \\cdot ${slew}`, res: iC },
+    // Without a load during the ramp the load terms drop out.
+    il > 0
+      ? { label: 'iz_ipeak', sym: 'I_{pk} = I_C + I_{load}', num: `${iC} + ${q(il, 'A')}`, res: q(r.iPeak, 'A') }
+      : { label: 'iz_ipeak', sym: 'I_{pk} = I_C', res: q(r.iPeak, 'A') },
+    target && { label: 'iz_cgFor', sym: 'C_{G,req} = \\frac{I_{GATE} \\cdot C}{I_{target}} − C_{GD}', num: `\\frac{${iGate} \\cdot ${C}}{${q(v.it, 'A')}} − ${cgd}`, res: q(r.cGateFor, 'F') },
+    il > 0
+      ? { label: 'iz_efet', sym: `E_{FET} = ${eCap[0]} + \\frac{V \\cdot I_{load} \\cdot t_{ramp}}{6}`, num: `${eCap[1]} + \\frac{${V} \\cdot ${q(il, 'A')} \\cdot ${tR}}{6}`, res: q(r.energyFet, 'J') }
+      : { label: 'iz_efet', sym: `E_{FET} = ${eCap[0]}`, num: eCap[1], res: q(r.energyFet, 'J') },
+    { label: 'iz_pavg', sym: 'P_{avg} = \\frac{E_{FET}}{t_{ramp}}', num: `\\frac{${q(r.energyFet, 'J')}}{${tR}}`, res: q(r.pAvg, 'W') },
+    { label: 'iz_ppk', sym: 'P_{pk} = V \\cdot I_C', num: `${V} \\cdot ${iC}`, res: q(r.pPeak, 'W') },
+  ], {
+    note: 'iz_note',
+    where: [['V', 'iz_v', 'v'], ['C', 'iz_c', 'c'], !gate && ['t_{ramp}', 'iz_tss', 'tss'],
+      gate && ['I_{GATE}', 'iz_igate', 'ig'], gate && ['C_G', 'iz_cg', 'cg'], gate && ['C_{GD}', 'iz_cgd', 'cgd'],
+      il > 0 && ['I_{load}', 'iz_iload', 'iload'], target && ['I_{target}', 'iz_itarget', 'it']],
+    refs: REFS,
+  });
+}
+
 export default {
   diagram,
   id: 'inrush',
@@ -359,14 +513,13 @@ export default {
     return r;
   },
 
-  render(r, v) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const A = (x) => (Number.isFinite(x) ? si(x, 'A', 3) : '∞');
-    const refs = ['TI SLVA670 “Managing Inrush Current”', 'TI TPS2490 datasheet (SLVS503), gate capacitor dV/dt control',
-      'TDK/EPCOS AN “NTC thermistors for inrush current limiting”', 'Linear Technology AN88'];
     if (v.mode === 'plug') {
       return heroes([['iz_ipeak', siHtml(r.iPeak, 'A', 3)], ['iz_energy', siHtml(r.energy, 'J', 3)]])
         + messages('warn', r.warnings)
+        + plugSteps(r, v)
         + block('results', rows([
           ['iz_rTot', si(r.r, 'Ω', 3)],
           ['iz_iR', A(r.iPeakR)],
@@ -376,14 +529,7 @@ export default {
           ['iz_vmax', si(r.vMax, 'V', 4)],
           r.r > 0 && ['iz_tau', si(r.tau, 's', 3)],
           r.type === 'rc' && ['iz_settle', si(5 * r.tau, 's', 3)],
-        ]))
-        + formulaBlock([
-          'R = R_source + ESR + R_trace       I_pk = V/R   (no inductance)',
-          'with L: α = R/(2L), ω0 = 1/√(L·C), ζ = α/ω0',
-          'ζ < 1: i(t) = V/(ω_d·L)·e^(−αt)·sin(ω_d·t),  t_pk = atan(ω_d/α)/ω_d',
-          '       V_C,max = V·(1 + e^(−απ/ω_d))',
-          'E = ½·C·V²  (stored; the same energy is lost in R)',
-        ], 'iz_note', refs);
+        ]));
     }
     if (v.mode === 'ntc') {
       return heroes([
@@ -391,6 +537,7 @@ export default {
         ['iz_withNtc', siHtml(r.iPeak, 'A', 3)],
       ])
         + messages('warn', r.warnings)
+        + ntcSteps(r, v)
         + block('results', rows([
           ['iz_vpk', si(r.vPk, 'V', 4)],
           ['iz_rTot', si(r.rUse + r.rSeries, 'Ω', 3)],
@@ -399,14 +546,7 @@ export default {
           ['iz_tau', si(r.tau, 's', 3)],
           ['iz_settle', si(5 * r.tau, 's', 3)],
           r.pSs !== undefined && ['iz_pss', si(r.pSs, 'W', 3)],
-        ]))
-        + formulaBlock([
-          'V_pk = √2·V_rms  (rectified AC)',
-          'R25,min = V_pk / I_pk − (R_source + ESR)',
-          'I_pk = V_pk / (R25 + R_source + ESR)',
-          'E_NTC ≈ ½·C·V_pk²      τ = R·C',
-          'P_ss = I_ss²·R_hot',
-        ], 'iz_note', refs);
+        ]));
     }
     const gate = v.mode === 'gate';
     return heroes([
@@ -414,6 +554,7 @@ export default {
       gate ? ['iz_tRamp', siHtml(r.tRamp, 's', 3)] : ['iz_slew', `${fmt(r.slew / 1000, 3)} <span class="u">V/ms</span>`],
     ])
       + messages('warn', r.warnings)
+      + rampSteps(r, v, u)
       + block('results', rows([
         ['iz_icap', si(r.iCap, 'A', 3)],
         gate && ['iz_slew', `${fmt(r.slew / 1000, 3)} V/ms`],
@@ -423,16 +564,7 @@ export default {
         ['iz_ppk', si(r.pPeak, 'W', 3)],
         ['iz_energy', si(r.energy, 'J', 3)],
         ['iz_bare', A(r.iBare)],
-      ]))
-      + formulaBlock(gate
-        ? ['dV/dt = I_GATE / (C_G + C_GD)      t_ramp = V / (dV/dt)',
-          'I_inrush = C·dV/dt (+ I_load)      C_G = I_GATE·C/I_target − C_GD',
-          'E_FET = ½·C·V² + V·I_load·t_ramp/6      P_avg = E_FET / t_ramp']
-        : ['dV/dt = V / t_ramp      I_C = C·dV/dt',
-          'I_pk = I_C + I_load   (resistive load: I_load ∝ V)',
-          'E_FET = ½·C·V² + V·I_load·t_ramp/6      P_avg = E_FET / t_ramp',
-          'P_pk = V·I_C   (start of the ramp)'],
-      'iz_note', refs);
+      ]));
   },
 };
 

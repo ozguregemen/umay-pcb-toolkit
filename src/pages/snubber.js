@@ -1,7 +1,8 @@
 import { parasitics, snubberDesign, stepResponse } from '../engine/snubber.js';
 import { nearestStandard } from '../engine/eseries.js';
 import { powerRating } from '../engine/circuit.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml } from '../ui/format.js';
 import { svg, text, path, axes, wave, twoTerm, wire, node, ground, mosfet } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -240,16 +241,51 @@ export default {
     return r;
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const rE = nearestStandard(r.r, 'E12').nearest;
     const cE = nearestStandard(r.cs, 'E12').nearest;
     const rating = r.p !== undefined ? powerRating(r.p) : undefined;
+    // Calculation steps: the parasitics (from the two ringing frequencies, or as entered), then R, Cs and the resistor power.
+    const q = (x, unit) => tx(si(x, unit));
+    const n = (x) => tx(fmt(x, 4));
+    const meas = r.x !== undefined;
+    // x² − 1 magnifies a rounded x (most for x near 1), so x keeps six digits here.
+    const x = meas && tx(fmt(r.x, 6));
+    const f1 = meas && q(v.f1 * FMUL[u.f1], 'Hz');
+    const lPar = q(r.lPar, 'H');
+    const cPar = q(r.cPar, 'F');
+    const worked = steps([
+      meas && { label: 'sn_x', sym: 'x = \\frac{f_1}{f_2}', num: `\\frac{${f1}}{${q(v.f2 * FMUL[u.f2], 'Hz')}}`, res: x },
+      meas && { label: 'sn_cparR', sym: 'C_{par} = \\frac{C_{add}}{x^{2} − 1}', num: `\\frac{${q(v.cadd, 'F')}}{{${x}}^{2} − 1}`, res: cPar },
+      meas && { label: 'sn_lparR', sym: 'L_{par} = \\frac{1}{{(2π \\cdot f_1)}^{2} \\cdot C_{par}}', num: `\\frac{1}{{(2π \\cdot ${f1})}^{2} \\cdot ${cPar}}`, res: lPar },
+      { label: 'sn_z0', sym: 'Z_0 = \\sqrt{\\frac{L_{par}}{C_{par}}}', num: `\\sqrt{\\frac{${lPar}}{${cPar}}}`, res: q(r.z0, 'Ω') },
+      !meas && { label: 'sn_f0', sym: 'f_{ring} = \\frac{1}{2π \\cdot \\sqrt{L_{par} \\cdot C_{par}}}', num: `\\frac{1}{2π \\cdot \\sqrt{${lPar} \\cdot ${cPar}}}`, res: q(r.f0, 'Hz') },
+      { label: 'sn_r', sym: 'R = \\frac{Z_0}{2 \\cdot ζ}', num: `\\frac{${q(r.z0, 'Ω')}}{2 \\cdot ${n(ZETA[v.zeta] ?? 0.5)}}`, res: q(r.r, 'Ω') },
+      { label: 'sn_cs', sym: 'C_s = k \\cdot C_{par}', num: `${n(v.k)} \\cdot ${cPar}`, res: q(r.cs, 'F') },
+      r.p !== undefined && { label: 'sn_p', sym: 'P_R = C_s \\cdot V^{2} \\cdot f_{sw}',
+        num: `${q(r.cs, 'F')} \\cdot {(${q(v.v, 'V')})}^{2} \\cdot ${q(v.f * (FMUL[u.f] ?? 1e3), 'Hz')}`, res: q(r.p, 'W') },
+      r.vSpike !== undefined && { label: 'sn_spike', sym: 'ΔV = I \\cdot Z_0', num: `${q(v.ioff, 'A')} \\cdot ${q(r.z0, 'Ω')}`, res: q(r.vSpike, 'V') },
+    ], {
+      note: 'sn_note',
+      where: [
+        meas && ['f_1', 'sn_f1', 'f1'], meas && ['f_2', 'sn_f2', 'f2'], meas && ['C_{add}', 'sn_cadd', 'cadd'],
+        !meas && ['L_{par}', 'sn_lpar', 'lpar'], !meas && ['C_{par}', 'sn_cpar', 'cpar'],
+        ['ζ', 'sn_zeta', 'zeta'], ['k', 'sn_k', 'k'],
+        r.p !== undefined && ['V', 'sn_v', 'v'], r.p !== undefined && ['f_{sw}', 'sn_fsw', 'f'], r.vSpike !== undefined && ['I', 'sn_ioff', 'ioff'],
+      ],
+      refs: [
+        'Nexperia AN11160 “Designing RC snubbers”',
+        'P. C. Todd, “Snubber Circuits: Theory, Design and Application”, Unitrode SEM-900 (1993)',
+        'TI SLVUBB4B (Power Stage Designer, RC snubber)',
+      ],
+    });
     return heroes([
       ['sn_r', siHtml(r.r, 'Ω', 3), `${t('sn_e12')}: ${si(rE, 'Ω', 3)}`],
       ['sn_cs', siHtml(r.cs, 'F', 3), `${t('sn_e12')}: ${si(cE, 'F', 3)}`],
     ])
       + messages('warn', r.warnings)
+      + worked
       + block('sn_par', rows([
         r.x !== undefined && ['sn_x', fmt(r.x, 4)],
         ['sn_cparR', si(r.cPar, 'F')],
@@ -264,18 +300,6 @@ export default {
         r.p !== undefined ? ['sn_p', si(r.p, 'W', 3), true] : ['sn_p', t('sn_needVf')],
         r.energy !== undefined && ['sn_energy', si(r.energy, 'J', 3)],
         r.p !== undefined && ['sn_rating', rating ? `${fmt(rating, 3)} W` : t('sn_ratingBig')],
-      ]))
-      + formulaBlock([
-        'x = f1/f2      Cpar = Cadd/(x² − 1)      Lpar = 1/((2π·f1)²·Cpar)',
-        'Z0 = √(Lpar/Cpar)      f_ring = 1/(2π·√(Lpar·Cpar))',
-        'ζ = (1/(2R))·√(Lpar/Cpar)  →  R = Z0/(2ζ)   (ζ = 0.5: R = Z0)',
-        'Cs = k·Cpar  (k ≈ 2…4)      Cs,min = 1/(2π·R·f_ring)',
-        'P_R = Cs·V²·fsw   (½·Cs·V² on charge + ½·Cs·V² on discharge)',
-        'ΔV ≈ I·Z0   (undamped overshoot)',
-      ], 'sn_note', [
-        'Nexperia AN11160 “Designing RC snubbers”',
-        'P. C. Todd, “Snubber Circuits: Theory, Design and Application”, Unitrode SEM-900 (1993)',
-        'TI SLVUBB4B (Power Stage Designer, RC snubber)',
-      ]);
+      ]));
   },
 };

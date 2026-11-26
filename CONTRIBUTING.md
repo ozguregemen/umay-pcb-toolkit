@@ -14,7 +14,7 @@ Thank you for helping. Issues and pull requests are welcome in **Turkish or Engl
 
 ## Ground rules
 
-1. **Every formula cites its source** — a standard, a textbook or a vendor application note — in the result (`steps(items, { note, refs })`, or `formulaBlock(lines, noteKey, refs)` on older pages) and in the test that checks it. New calculators show the calculation with `steps()`: each step is the formula in symbols, the same formula with the reader's numbers, and the result (notation in `src/ui/math.js`).
+1. **Every formula cites its source** — a standard, a textbook or a vendor application note — in the result (`steps(items, { note, refs })`, or `formulaBlock(lines, noteKey, refs)` on older pages) and in the test that checks it. Calculators show the calculation with `steps()`: each step is the formula in symbols, the same formula with the reader's numbers, and the result (notation in `src/ui/math.js`). The steps must mirror what the engine computes; `node tools/dump-steps.mjs <page-id> --all` prints them as text for checking by hand, and the tests re-evaluate the numbers of every step.
 2. **No copyrighted material.** Do not paste text, tables or figures from IPC standards, books or application notes. Formulas and individual values are fine when cited; explain in your own words.
 3. **No build step and no runtime dependency.** The site is plain HTML, CSS and native ES modules; keep it that way.
 4. **Turkish and English together.** Every string exists in both languages; the tests fail when one is missing.

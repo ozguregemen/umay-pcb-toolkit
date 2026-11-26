@@ -1,5 +1,6 @@
 import { averageCurrent, batteryLife } from '../engine/battery.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { svg, text, path, axes, wave } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -53,6 +54,7 @@ const strings = {
     bt_lifeNoSelf: 'Kendiliğinden boşalma olmadan ömür',
     bt_peak: 'En yüksek akım',
     bt_dAct: 'Aktif görev oranı',
+    bt_dEv: 'Ek olay görev oranı',
     bt_perDay: 'Günlük tüketim',
     warn_bt_coinPeak: 'Düğme pilde yüksek darbe akımı: etkin kapasite düşer ve iç direnç (onlarca Ω) gerilimi çökertebilir. Pile paralel bir rezervuar kondansatörü ekleyin ve darbeyi kısaltın (TI SWRA349).',
     warn_bt_long: 'Ömür 10 yılı aşıyor: bu sürede raf ömrü, kendiliğinden boşalma ve yaşlanma belirleyicidir; pilin raf ömrü değerini kontrol edin.',
@@ -112,6 +114,7 @@ const strings = {
     bt_lifeNoSelf: 'Life without self-discharge',
     bt_peak: 'Peak current',
     bt_dAct: 'Active duty cycle',
+    bt_dEv: 'Extra-event duty cycle',
     bt_perDay: 'Consumption per day',
     warn_bt_coinPeak: 'High pulse current from a coin cell: the effective capacity drops and the internal resistance (tens of Ω) can collapse the voltage. Add a reservoir capacitor across the cell and shorten the pulse (TI SWRA349).',
     warn_bt_long: 'Life beyond 10 years: shelf life, self-discharge and ageing dominate over such times; check the cell’s shelf-life rating.',
@@ -231,6 +234,46 @@ function diagram(v, u, r) {
   return svg(440, 196, b, t('bt_dgAria'), { wide: true });
 }
 
+/**
+ * Calculation steps: duty cycles, the average current, the usable capacity,
+ * the equivalent self-discharge current and the life. Capacities are shown in
+ * mAh and the life in hours (mAh / mA = h), then in the unit of the headline.
+ */
+function worked(r, v, u) {
+  const p = inputs(v, u);
+  const A = (x) => tx(si(x, 'A'));
+  const s = (x) => tx(si(x, 's'));
+  const num = (x) => tx(fmt(x, 4));
+  const pct = (x) => tx(`${fmt(x, 4)} %`);
+  const mAh = (ah) => tx(`${fmt(ah * 1000, 4)} mAh`);
+  const hours = tx(`${fmt(r.hours, 4)} h`);
+  const dAct = num(r.dAct);
+  const dEv = num(r.dBurst);
+  return steps([
+    { label: 'bt_dAct', sym: 'D_{act} = \\frac{t_{act}}{T}', num: `\\frac{${s(p.tAct)}}{${s(p.period)}}`, res: dAct },
+    r.hasBurst && { label: 'bt_dEv', sym: 'D_{ev} = \\frac{t_{ev}}{T_{ev}}', num: `\\frac{${s(p.tBurst)}}{${s(p.burstPeriod)}}`, res: dEv },
+    r.hasBurst
+      ? { label: 'bt_iavg', sym: 'I_{avg} = I_{sleep} \\cdot (1 − D_{act} − D_{ev}) + I_{act} \\cdot D_{act} + I_{ev} \\cdot D_{ev}',
+        num: `${A(p.iSleep)} \\cdot (1 − ${dAct} − ${dEv}) + ${A(p.iAct)} \\cdot ${dAct} + ${A(p.iBurst)} \\cdot ${dEv}`, res: A(r.iAvg) }
+      : { label: 'bt_iavg', sym: 'I_{avg} = I_{sleep} \\cdot (1 − D_{act}) + I_{act} \\cdot D_{act}',
+        num: `${A(p.iSleep)} \\cdot (1 − ${dAct}) + ${A(p.iAct)} \\cdot ${dAct}`, res: A(r.iAvg) },
+    { label: 'bt_usableCap', sym: 'C_{usable} = C_{nom} \\cdot k_u \\cdot k_T', num: `${mAh(r.capAh)} \\cdot ${pct(v.use)} \\cdot ${pct(v.temp)}`, res: mAh(r.usableAh) },
+    { label: 'bt_self', sym: `I_{self} = \\frac{C_{nom} \\cdot k_{sd}}{${tx('8766 h')}}`, num: `\\frac{${mAh(r.capAh)} \\cdot ${pct(v.sd)}}{${tx('8766 h')}}`, res: A(r.iSelf) },
+    { label: 'bt_life', sym: 't_{life} = \\frac{C_{usable}}{I_{avg} + I_{self}}', num: `\\frac{${mAh(r.usableAh)}}{${A(r.iAvg)} + ${A(r.iSelf)}}`,
+      res: r.hours >= 48 ? `${hours} = ${tx(lifeText(r.hours))}` : hours },
+  ], {
+    note: 'bt_note',
+    where: [['t_{act}', 'bt_tact', 'tact'], ['T', 'bt_per', 'per'], ['I_{sleep}', 'bt_isl', 'isl'], ['I_{act}', 'bt_iact', 'iact'],
+      r.hasBurst && ['I_{ev}', 'bt_ib', 'ib'], r.hasBurst && ['t_{ev}', 'bt_tb', 'tb'], r.hasBurst && ['T_{ev}', 'bt_pb', 'pb'],
+      ['C_{nom}', 'bt_cap', 'cap'], ['k_u', 'bt_usable', 'use'], ['k_T', 'bt_temp', 'temp'], ['k_{sd}', 'bt_sd', 'sd']],
+    refs: [
+      'Panasonic CR2032 datasheet (225 mAh)',
+      'Battery University BU-802b (self-discharge)',
+      'TI SWRA349 “Coin cells and peak current draw”',
+    ],
+  });
+}
+
 const preset = (label, value, unit) => ({ label, value, unit, raw: false });
 
 export default {
@@ -284,7 +327,7 @@ export default {
     return r;
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const [n, k, sub] = lifeParts(r.hours);
     const tot = r.iAvg + r.iSelf;
@@ -294,6 +337,7 @@ export default {
       ['bt_iavg', siHtml(r.iAvg, 'A', 3)],
     ])
       + messages('warn', r.warnings)
+      + worked(r, v, u)
       + block('bt_share', rows([
         ['bt_sleep', share(r.parts.sleep)],
         ['bt_active', share(r.parts.act)],
@@ -307,17 +351,6 @@ export default {
         ['bt_peak', si(r.iPeak, 'A', 3)],
         ['bt_dAct', `${fmt(r.dAct * 100, 3)} %`],
         ['bt_perDay', `${fmt(tot * 24 * 1000, 3)} mAh`],
-      ]))
-      + formulaBlock([
-        'I_avg = I_sleep·(1 − D_act − D_ev) + I_act·D_act + I_ev·D_ev',
-        'D_act = t_act / T      D_ev = t_ev / T_ev',
-        'C_usable = C_nom · usable · k_temp',
-        'I_self = C_nom · (self-discharge per year) / 8766 h',
-        'life = C_usable / (I_avg + I_self)',
-      ], 'bt_note', [
-        'Panasonic CR2032 datasheet (225 mAh)',
-        'Battery University BU-802b (self-discharge)',
-        'TI SWRA349 “Coin cells and peak current draw”',
-      ]);
+      ]));
   },
 };

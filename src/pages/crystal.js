@@ -1,6 +1,7 @@
 import { effectiveLoad, equalLoadCaps, pullingPpm, ppmToHz, driftSeconds } from '../engine/passives.js';
 import { nearestStandard } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, text, rect, circle, path, dimH, arrow, inverter } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -31,6 +32,7 @@ const strings = {
     xc_driftDay: 'Günlük saat kayması',
     xc_driftMonth: 'Aylık saat kayması',
     xc_driftYear: 'Yıllık saat kayması',
+    xc_stepStd: 'Hesaplanan C1 = C2 değerine en yakın E12 standart değeri seçilir; sonraki adımlar bu değerle yapılır.',
     xc_note: 'Pierce osilatöründe iki kondansatör kristale seri görünür: CL = C1·C2/(C1+C2) + Cstray. Yaygın hata, C1 ve C2’yi doğrudan CL değerinde seçmektir; bu frekansı aşağı çeker. Frekans çekmesi için Cm ve C0 kristal veri sayfasından alınır.',
     warn_clTooLow: 'CL, parazitik kapasiteden küçük veya eşit; bu kristal bu kart için uygun olmayabilir.',
     xc_dgPierce: 'Pierce osilatörü: MCU içindeki evirici ve geri besleme direnci Rf, kristal, C1 ve C2 toprağa; kesikli çizgi parazitik kapasite',
@@ -68,6 +70,7 @@ const strings = {
     xc_driftDay: 'Clock drift per day',
     xc_driftMonth: 'Clock drift per month',
     xc_driftYear: 'Clock drift per year',
+    xc_stepStd: 'The E12 standard value nearest to the calculated C1 = C2 is chosen; the following steps use it.',
     xc_note: 'In a Pierce oscillator the two capacitors appear in series across the crystal: CL = C1·C2/(C1+C2) + Cstray. A common mistake is to fit C1 and C2 equal to CL, which pulls the frequency low. For pulling, take Cm and C0 from the crystal datasheet.',
     warn_clTooLow: 'CL is not larger than the stray capacitance; this crystal may not suit this board.',
     xc_dgPierce: 'Pierce oscillator: MCU inverter with feedback resistor Rf, crystal, C1 and C2 to ground; stray capacitance dashed',
@@ -239,31 +242,55 @@ export default {
     return { ok: true, mode: v.mode, c1, c2, std, clEff, clStd, clUsed, cl: v.cl, pull, warnings };
   },
 
-  render(r) {
+  render(r, v) {
     if (!r.ok) return invalid(r.errors);
+    // Signed number with a true minus sign.
+    const sgn = (x, sig = 4) => (x < 0 ? `−${fmt(-x, sig)}` : fmt(x, sig));
     if (r.mode === 'ppm') {
       const DAY = 86400;
-      return heroes([['xc_df', siHtml(r.df, 'Hz')], ['xc_driftDay', siHtml(Math.abs(driftSeconds(r.ppm, DAY)), 's')]])
+      const day = Math.abs(driftSeconds(r.ppm, DAY));
+      return heroes([['xc_df', siHtml(r.df, 'Hz')], ['xc_driftDay', siHtml(day, 's')]])
+        + steps([
+          { label: 'xc_df', sym: 'Δf = f \\cdot \\frac{ppm}{10^{6}}', num: `${tx(si(r.fHz, 'Hz', 6))} \\cdot \\frac{${sgn(r.ppm)}}{10^{6}}`,
+            res: tx(`${r.df < 0 ? '−' : ''}${si(Math.abs(r.df), 'Hz')}`) },
+          { label: 'xc_driftDay', sym: 'Δt = \\frac{|ppm|}{10^{6}} \\cdot t', num: `\\frac{${sgn(Math.abs(r.ppm))}}{10^{6}} \\cdot ${tx(`${DAY} s`)}`, res: tx(si(day, 's')) },
+        ], { refs: ['Crystal manufacturer application notes'], where: [['f', 'xc_f', 'f'], ['ppm', 'xc_tol', 'ppm'], ['t', 'xc_dgDay']] })
         + block('results', rows([
           ['xc_driftMonth', si(Math.abs(driftSeconds(r.ppm, 30 * DAY)), 's')],
           ['xc_driftYear', si(Math.abs(driftSeconds(r.ppm, 365 * DAY)), 's')],
-        ]))
-        + formulaBlock(['Δf = f · ppm / 10⁶', 'drift = ppm / 10⁶ · t'], null);
+        ]));
     }
     const errPct = ((r.clUsed - r.cl) / r.cl) * 100;
     const main = r.mode === 'caps'
       ? heroes([['xc_capEach', `${fmt(r.c1, 4)} <span class="u">pF</span>`], ['xc_capStd', `${fmt(r.std, 3)} <span class="u">pF</span>`]])
       : heroes([['xc_clEff', `${fmt(r.clEff, 4)} <span class="u">pF</span>`]]);
+    // Calculation steps, in pF as entered. In "caps" mode the load is checked with the E12 value.
+    // Capacitances keep six digits: the deviation and the pulling subtract values that lie close together.
+    const pf = (x) => tx(`${sgn(x, 6)} pF`);
+    const caps = r.mode === 'caps';
+    const hasStd = !caps || r.std > 0; // no standard value when CL ≤ Cstray
+    const hasPull = r.pull !== null && Number.isFinite(r.pull);
+    const ca = caps ? r.std : r.c1;
+    const cb = caps ? r.std : r.c2;
+    const worked = steps([
+      caps && { label: 'xc_capEach', sym: 'C_1 = C_2 = 2 \\cdot (C_L − C_{stray})', num: `2 \\cdot (${pf(r.cl)} − ${pf(v.cs)})`, res: pf(r.c1) },
+      caps && hasStd && { label: 'xc_capStd', sym: 'C_{E12}', res: pf(r.std), note: 'xc_stepStd' },
+      hasStd && { label: 'xc_clEff', sym: caps ? 'C_{L,eff} = \\frac{C_{E12} \\cdot C_{E12}}{C_{E12} + C_{E12}} + C_{stray}' : 'C_{L,eff} = \\frac{C_1 \\cdot C_2}{C_1 + C_2} + C_{stray}',
+        num: `\\frac{${pf(ca)} \\cdot ${pf(cb)}}{${pf(ca)} + ${pf(cb)}} + ${pf(v.cs)}`, res: pf(r.clUsed) },
+      hasStd && { label: 'xc_clErr', sym: '\\frac{C_{L,eff} − C_L}{C_L}', num: `\\frac{${pf(r.clUsed)} − ${pf(r.cl)}}{${pf(r.cl)}}`,
+        res: tx(`${errPct > 0 ? '+' : ''}${sgn(errPct, 3)} %`) },
+      hasPull && { label: 'xc_pull', sym: '\\frac{Δf}{f} ≈ \\frac{C_m}{2} \\cdot (\\frac{1}{C_0 + C_{L,eff}} − \\frac{1}{C_0 + C_L})',
+        num: `\\frac{${tx(`${fmt(v.cm, 6)} fF`)}}{2} \\cdot (\\frac{1}{${pf(v.c0)} + ${pf(r.clUsed)}} − \\frac{1}{${pf(v.c0)} + ${pf(r.cl)}})`,
+        res: tx(`${r.pull > 0 ? '+' : ''}${sgn(r.pull, 3)} ppm`) },
+    ], { note: 'xc_note', refs: ['ST AN2867 “Oscillator design guide for STM8/STM32”', 'Crystal manufacturer application notes'],
+      where: [['C_L', 'xc_cl', 'cl'], ['C_{stray}', 'xc_cs', 'cs'], !caps && ['C_1', 'xc_c1', 'c1'], !caps && ['C_2', 'xc_c2', 'c2'],
+        caps && hasStd && ['C_{E12}', 'xc_capStd'], hasPull && ['C_m', 'xc_cm', 'cm'], hasPull && ['C_0', 'xc_c0', 'c0']] });
     return main + messages('warn', r.warnings)
+      + worked
       + block('results', rows([
         r.mode === 'caps' && ['xc_clEff', `${fmt(r.clStd, 4)} pF (${'E12'})`],
         ['xc_clErr', `${errPct >= 0 ? '+' : ''}${fixed(errPct, 1)} %`],
         r.pull !== null && ['xc_pull', `${r.pull >= 0 ? '+' : ''}${fmt(r.pull, 3)} ppm`],
-      ]))
-      + formulaBlock([
-        'CL = C1·C2 / (C1 + C2) + Cstray',
-        'C1 = C2 = 2·(CL − Cstray)',
-        'Δf/f ≈ (Cm/2)·[1/(C0 + CL,actual) − 1/(C0 + CL,spec)]',
-      ], 'xc_note', ['ST AN2867 “Oscillator design guide for STM8/STM32”', 'Crystal manufacturer application notes']);
+      ]));
   },
 };

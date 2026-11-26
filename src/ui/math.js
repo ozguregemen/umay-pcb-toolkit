@@ -23,7 +23,8 @@ const OPERATORS = '=+−-·×/()[]<>≤≥≈±∥→,;:|!≠≪≫∝';
 /** Wrap display text (a formatted number with its unit) for use inside a formula. */
 export const tx = (s) => `\\text{${String(s).replace(/[{}\\]/g, '')}}`;
 
-function parse(src) {
+/** TeX-like source → syntax tree (list of nodes); used by tex(), texPlain() and the tests. */
+export function parse(src) {
   const s = String(src ?? '');
   const n = s.length;
   let i = 0;

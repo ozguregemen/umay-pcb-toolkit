@@ -53,7 +53,8 @@ export function shFit([t1, r1], [t2, r2], [t3, r3]) {
   const c = (g3 - g2) / ((l3 - l2) * (l1 + l2 + l3));
   const b = g2 - c * (l1 * l1 + l1 * l2 + l2 * l2);
   const a = y1 - (b + c * l1 * l1) * l1;
-  return [a, b, c].every(Number.isFinite) ? { a, b, c } : null;
+  // fit: the intermediate values (L = ln R, Y = 1/T, γ2, γ3) for the calculation steps.
+  return [a, b, c].every(Number.isFinite) ? { a, b, c, fit: { l: [l1, l2, l3], y: [y1, y2, y3], g2, g3 } } : null;
 }
 
 /** Equivalent B-value between two temperatures (K): B = ln(R1/R2) / (1/T1 − 1/T2). */
@@ -77,7 +78,9 @@ export function ntcPoint({ rOf, tK, rs, vref, top, bits, delta }) {
   const r = rOf(tK);
   const vout = dividerOut(r, rs, vref, top);
   const h = 0.01;
-  const slope = (dividerOut(rOf(tK + h), rs, vref, top) - dividerOut(rOf(tK - h), rs, vref, top)) / (2 * h);
+  const voutUp = dividerOut(rOf(tK + h), rs, vref, top);
+  const voutDown = dividerOut(rOf(tK - h), rs, vref, top);
+  const slope = (voutUp - voutDown) / (2 * h);
   // Ratiometric: the ADC reference is the divider supply.
   const { code, lsb } = adcCode(vout, { bits, vref });
   const i = vref / (rs + r);
@@ -86,6 +89,7 @@ export function ntcPoint({ rOf, tK, rs, vref, top, bits, delta }) {
     r,
     vout,
     slope, // V/K
+    h, voutUp, voutDown, // the two points of the central difference, for the calculation steps
     code,
     lsb,
     degPerLsb: lsb / Math.abs(slope),

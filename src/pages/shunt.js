@@ -1,5 +1,6 @@
-import { shuntDesign, DERATE } from '../engine/shunt.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { shuntDesign, DERATE, RATING_MARGIN } from '../engine/shunt.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, text, rect, path, arrow, circle, opamp, block as icBlock, bar } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -69,6 +70,10 @@ const strings = {
     shn_eRss: 'İstatistiksel (RSS)',
     shn_kelvin: 'Kelvin (4 telli) bağlantı: ölçüm izlerini şönt pedlerinin iç kenarından ayrı bir çift olarak çıkarın ve yükseltece yan yana götürün. Akım taşıyan bakırın ve lehimin direnci (1 mΩ civarı olabilir) bu sayede ölçüme girmez. Mümkünse dört uçlu şönt kullanın ve yükseltecin girişine küçük bir RC filtre ekleyin.',
     shn_note: 'Şönt değeri, hesaplanan değerin altındaki ilk yaygın değere yuvarlanır; böylece Imax’ta tam ölçek aşılmaz. Ofset hatası küçük akımlarda büyür; bu yüzden tablo Imax/10’daki hatayı da gösterir. Şönt ısındıkça direnci TCR ile değişir.',
+    shn_stepCalc: 'Hesaplanan şönt değeri',
+    shn_stepStd: 'Hesaplanan değere eşit ya da onun altındaki ilk yaygın şönt değeri (1–1,5–2–2,5–3–4–5–6–7,5 × 10ⁿ).',
+    shn_stepUser: 'Sizin girdiğiniz değer; aşağıdaki adımlar bu değerle hesaplanır.',
+    shn_stepRating: 'Listede bu değeri karşılayan ilk güç sınıfı önerilir: 0,1 – 0,125 – 0,25 – 0,5 – 1 – 2 – 3 – 5 W.',
     warn_shn_clip: 'Imax’ta yükselteç çıkışı ({v}) ADC tam ölçeğini aşıyor: büyük akımlarda okuma doyar. Kazancı ya da şönt değerini düşürün.',
     warn_shn_lowUse: 'Imax’ta ADC aralığının yalnızca {p} kullanılıyor: çözünürlük boşa gidiyor. Kazancı artırın.',
     warn_shn_power: 'Şöntte {p} harcanıyor: büyük kılıf (2512 veya daha büyük), geniş bakır alan ve termal tasarım gerekir; şönt gerilimini düşürmeyi düşünün.',
@@ -149,6 +154,10 @@ const strings = {
     shn_eRss: 'Statistical (RSS)',
     shn_kelvin: 'Kelvin (4-wire) connection: take the sense traces from the inner edge of the shunt pads as a separate pair and route them side by side to the amplifier. That keeps the resistance of the current-carrying copper and solder (which can be around 1 mΩ) out of the measurement. Prefer a four-terminal shunt and add a small RC filter at the amplifier input.',
     shn_note: 'The shunt is rounded down to the first common value below the calculated one, so full scale is not exceeded at Imax. Offset error grows at small currents, which is why the table also shows the error at Imax/10. As the shunt heats up, its resistance changes by the TCR.',
+    shn_stepCalc: 'Calculated shunt value',
+    shn_stepStd: 'The first common shunt value at or below the calculated one (1–1.5–2–2.5–3–4–5–6–7.5 × 10ⁿ).',
+    shn_stepUser: 'The value you entered; the steps below use it.',
+    shn_stepRating: 'The first rating in the list that covers this is suggested: 0.1 – 0.125 – 0.25 – 0.5 – 1 – 2 – 3 – 5 W.',
     warn_shn_clip: 'At Imax the amplifier output ({v}) exceeds the ADC full scale: readings saturate at high current. Reduce the gain or the shunt value.',
     warn_shn_lowUse: 'Only {p} of the ADC range is used at Imax: resolution is wasted. Increase the gain.',
     warn_shn_power: 'The shunt dissipates {p}: it needs a large package (2512 or bigger), generous copper and thermal design; consider a lower sense voltage.',
@@ -336,12 +345,59 @@ export default {
   render(r, v) {
     if (!r.ok) return invalid(r.errors);
     const e = (k) => `${pm(r.errFull[k])} · ${pm(r.errLow[k])}`;
+    // Calculation steps: value, signal chain, power and the error budget at Imax.
+    const qV = (x) => tx(si(x, 'V'));
+    const qA = (x) => tx(si(x, 'A'));
+    const qR = (x) => tx(si(x, 'Ω'));
+    const qW = (x) => tx(si(x, 'W'));
+    // Percentages inside formulas are written without digit grouping (1140 %, not 1,140 %).
+    const pc = (x) => tx(new Intl.NumberFormat(locale(), { style: 'percent', maximumSignificantDigits: 3, useGrouping: false }).format(x / 100));
+    const degC = (x) => tx(`${fmt(x)} °C`);
+    const adc = v.sizing === 'adc';
+    const G = tx(fmt(v.gain, 4));
+    const kd = tx(fmt(r.derate, 4));
+    const derated = r.derate > 0 && r.derate < 1;
+    const ef = r.errFull;
+    // Error terms that are present, each as symbol, numbers and value (percent of reading).
+    const terms = [
+      { sym: 'e_{tol}', num: pc(ef.tol), val: ef.tol },
+      { sym: 'TCR \\cdot ΔT', num: `${tx(`${fmt(v.tcr)} ppm/K`)} \\cdot ${tx(`${fmt(v.dT)} K`)}`, val: ef.tcr },
+      ef.gain > 0 && { sym: 'e_{G}', num: pc(ef.gain), val: ef.gain },
+      ef.offset > 0 && { sym: '\\frac{V_{os}}{I_{max} \\cdot R}', num: `\\frac{${tx(si(v.vos * 1e-6, 'V'))}}{${qA(r.imax)} \\cdot ${qR(r.r)}}`, val: ef.offset },
+      { sym: '\\frac{I_{LSB}}{2 \\cdot I_{max}}', num: `\\frac{${qA(r.lsbCurrent)}}{2 \\cdot ${qA(r.imax)}}`, val: ef.quant },
+    ].filter(Boolean);
+    const worked = steps([
+      { label: 'shn_stepCalc', sym: adc ? 'R = \\frac{V_{ref} \\cdot k}{G \\cdot I_{max}}' : 'R = \\frac{V_{sense}}{I_{max}}',
+        num: adc ? `\\frac{${qV(v.vfs)} \\cdot ${tx(fmt(v.use / 100))}}{${G} \\cdot ${qA(r.imax)}}` : `\\frac{${tx(si(v.vsfs * 1e-3, 'V'))}}{${qA(r.imax)}}`, res: qR(r.rExact) },
+      { label: 'shn_r', sym: 'R', res: qR(r.r), note: r.userR ? 'shn_stepUser' : 'shn_stepStd' },
+      { label: 'shn_vAmp', sym: 'V_{amp} = G \\cdot I_{max} \\cdot R', num: `${G} \\cdot ${qA(r.imax)} \\cdot ${qR(r.r)}`, res: qV(r.vAmp) },
+      { label: 'shn_p', sym: 'P = I_{max}^{2} \\cdot R', num: `{(${qA(r.imax)})}^{2} \\cdot ${qR(r.r)}`, res: qW(r.p) },
+      derated && { labelRaw: t('shn_derate', { t: `${fmt(v.tamb)} °C` }), sym: `k_{d} = \\frac{${degC(DERATE.zero)} − T_{amb}}{${degC(DERATE.zero)} − ${degC(DERATE.full)}}`,
+        num: `\\frac{${degC(DERATE.zero)} − ${degC(v.tamb)}}{${degC(DERATE.zero)} − ${degC(DERATE.full)}}`, res: kd },
+      Number.isFinite(r.ratingMin) && { label: 'shn_rating', sym: derated ? `P_{rated} \\ge \\frac{${RATING_MARGIN} \\cdot P}{k_{d}}` : `P_{rated} \\ge ${RATING_MARGIN} \\cdot P`,
+        num: derated ? `\\frac{${RATING_MARGIN} \\cdot ${qW(r.p)}}{${kd}}` : `${RATING_MARGIN} \\cdot ${qW(r.p)}`, res: qW(r.ratingMin), note: 'shn_stepRating' },
+      { label: 'shn_lsb', sym: 'I_{LSB} = \\frac{V_{ref}}{2^{N} \\cdot G \\cdot R}', num: `\\frac{${qV(v.vfs)}}{2^{${v.bits}} \\cdot ${G} \\cdot ${qR(r.r)}}`, res: qA(r.lsbCurrent) },
+      { label: 'shn_eWc', sym: `e_{wc} = ${terms.map((x) => x.sym).join(' + ')}`, num: terms.map((x) => x.num).join(' + '), res: pc(ef.wc) },
+      { label: 'shn_eRss', sym: 'e_{RSS} = \\sqrt{Σ e_{i}^{2}}', num: `\\sqrt{${terms.map((x) => `{(${pc(x.val)})}^{2}`).join(' + ')}}`, res: pc(ef.rss) },
+    ], {
+      note: 'shn_note',
+      where: [['I_{max}', 'shn_imax', 'imax'], !adc && ['V_{sense}', 'shn_vsfs', 'vsfs'], ['V_{ref}', 'shn_vfs', 'vfs'], adc && ['k', 'shn_use', 'use'],
+        ['G', 'shn_gain', 'gain'], ['N', 'shn_bits', 'bits'], r.userR && ['R', 'shn_rUser', 'rsel'], derated && ['T_{amb}', 'shn_tamb', 'tamb'],
+        ['e_{tol}', 'shn_tol', 'tol'], ['TCR', 'shn_tcr', 'tcr'], ['ΔT', 'shn_dT', 'dT'], ef.gain > 0 && ['e_{G}', 'shn_ge', 'ge'], ef.offset > 0 && ['V_{os}', 'shn_vos', 'vos']],
+      refs: [
+        'Ohm’s and Joule’s laws',
+        'Vishay Dale WSL series datasheet (power derating, TCR, 4-terminal Kelvin layout)',
+        'TI INA180 / INA240 datasheets (current-sense amplifier gain error, offset, common-mode range)',
+        `Derating model: 100 % ≤ ${DERATE.full} °C, 0 % at ${DERATE.zero} °C`,
+      ],
+    });
     return heroes([
       ['shn_r', siHtml(r.r, 'Ω'), esc(t(r.userR ? 'shn_rUserSub' : 'shn_rSub', { r: si(r.rExact, 'Ω', 3) }))],
       ['shn_p', siHtml(r.p, 'W'), esc(t('shn_pSub', { w: ratingLabel(r.rating) }))],
       ['shn_lsb', siHtml(r.lsbCurrent, 'A'), esc(t('shn_lsbSub', { i: si(r.iFs, 'A', 3) }))],
     ])
       + messages('warn', r.warnings, r.vars)
+      + worked
       + block('shn_chainTitle', rows([
         ['shn_vSense', si(r.vSense, 'V')],
         ['shn_vAmp', si(r.vAmp, 'V')],
@@ -365,19 +421,6 @@ export default {
         ['shn_eWc', e('wc'), true],
         ['shn_eRss', e('rss'), true],
       ]))
-      + `<p class="note">${esc(t('shn_kelvin'))}</p>`
-      + formulaBlock([
-        v.sizing === 'adc' ? 'R = Vref · k / (G · Imax),   k = share of the ADC range used' : 'R = V_sense,FS / Imax',
-        '→ first common shunt value ≤ R  (1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5 × 10ⁿ)',
-        'P = Imax² · R,   rating ≥ 2 · P / k_derate,   k_derate = 1 (≤ 70 °C) … 0 (170 °C)',
-        'I_LSB = Vref / (2^N · G · R),   I_FS = Vref / (G · R)',
-        'errors (% of reading): tol,  TCR · ΔT,  gain error,  Vos / (I · R),  ½ I_LSB / I',
-        'worst case = Σ|e_i|,   RSS = √(Σ e_i²)',
-      ], 'shn_note', [
-        'Ohm’s and Joule’s laws',
-        'Vishay Dale WSL series datasheet (power derating, TCR, 4-terminal Kelvin layout)',
-        'TI INA180 / INA240 datasheets (current-sense amplifier gain error, offset, common-mode range)',
-        `Derating model: 100 % ≤ ${DERATE.full} °C, 0 % at ${DERATE.zero} °C`,
-      ]);
+      + `<p class="note">${esc(t('shn_kelvin'))}</p>`;
   },
 };

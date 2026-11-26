@@ -1,6 +1,7 @@
 import { CATEGORIES, BANDS, PER_VOLT, minimumSpacingMm, maxVoltageForSpacing, bandIndex } from '../engine/spacing.js';
 import { toMm, fromMm } from '../engine/units.js';
-import { hero, block, formulaBlock, messages, rows } from '../ui/calculator.js';
+import { hero, block, steps, messages, rows } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fixed, fmt, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -31,6 +32,12 @@ const strings = {
     sp_perVolt: '> 500 V (mm/V)',
     sp_usedRow: 'Kullanılan satır',
     sp_rowOver500: '> 500 V doğrusal kural',
+    sp_nextRow: 'Bir üst satır',
+    sp_firstRow: 'Tablonun ilk satırı',
+    sp_d500: '301–500 V satırındaki tablo değeri',
+    sp_coef: 'Kategorinin 500 V üzeri katsayısı (tablonun son satırı, mm/V)',
+    sp_stepLookup: 'Hesaplanmaz, tablodan okunur: gerilimi içeren satır ile kategori sütununun kesiştiği değer.',
+    sp_stepSearch: 'Formülle değil, tabloda aranarak bulunur: bu kategoride tablo değeri mevcut aralığı aşmayan en yüksek gerilimli satır.',
     sp_dgLead: 'bileşen bacağı',
     sp_dgPolymer: 'kalıcı polimer kaplama',
     sp_dgConformal: 'konformal kaplama',
@@ -65,6 +72,12 @@ const strings = {
     sp_perVolt: '> 500 V (mm/V)',
     sp_usedRow: 'Row used',
     sp_rowOver500: '> 500 V linear rule',
+    sp_nextRow: 'Next row up',
+    sp_firstRow: 'First row of the table',
+    sp_d500: 'Table value of the 301–500 V row',
+    sp_coef: 'Coefficient of the category above 500 V (last table row, mm/V)',
+    sp_stepLookup: 'Read from the table, not calculated: the row whose range contains the voltage, in the column of the category.',
+    sp_stepSearch: 'Found by searching the table, not by a formula: the highest-voltage row of this category whose table value does not exceed the available spacing.',
     sp_dgLead: 'component lead',
     sp_dgPolymer: 'permanent polymer coating',
     sp_dgConformal: 'conformal coating',
@@ -98,6 +111,55 @@ const mmMil = (mm) => (isImperial()
   ? `${fixed(fromMm(mm, 'mil'), 1)} <span class="u">mil</span>`
   : `${fixed(mm, 2)} <span class="u">mm</span>`);
 const mmMilSub = (mm) => (isImperial() ? `${fixed(mm, 3)} mm` : `${fixed(fromMm(mm, 'mil'), 1)} mil`);
+const rowOf = (i) => `${BANDS[i].from === 0 ? 0 : BANDS[i].from + 1}–${BANDS[i].to} V`;
+
+/**
+ * Calculation steps. Up to 500 V the value is read from Table 6-1 (no formula);
+ * above it the linear rule applies. The table and its coefficient are in mm,
+ * so the steps use mm (the result is repeated in mil for imperial readers).
+ */
+function worked(r, v) {
+  const q = (mm) => tx(`${fmt(Number(mm.toFixed(6)), 12)} mm`);
+  const V = (x) => tx(`${fmt(x, 4)} V`);
+  const mil = (mm) => (isImperial() ? ` = ${tx(`${fixed(fromMm(mm, 'mil'), 1)} mil`)}` : '');
+  const last = BANDS.length - 1;
+  const d500 = BANDS[last].valuesMm[r.col];
+  const c = tx(`${fmt(PER_VOLT[r.col])} mm/V`);
+  const cell = (i) => `d_{tab}(${tx(rowOf(i))}, ${tx(v.cat)})`;
+  const at500 = { label: 'sp_d500', sym: `d_{500} = ${cell(last)}`, res: q(d500) };
+  const linear = r.band === -2;
+  let list;
+  if (r.mode === 'voltage') {
+    const d = q(r.dMm);
+    if (linear) {
+      list = [at500, { label: 'sp_maxVoltage', sym: 'V_{max} = \\text{500 V} + \\frac{d − d_{500}}{c}',
+        num: `${V(500)} + \\frac{${d} − ${q(d500)}}{${c}}`, res: V(r.vmax) }];
+    } else if (r.band < 0) {
+      // Below the first row: nothing in the table is allowed.
+      list = [
+        { label: 'sp_firstRow', sym: cell(0), res: `${q(BANDS[0].valuesMm[r.col])} > ${d}` },
+        { label: 'sp_maxVoltage', sym: 'V_{max}', res: V(0), note: 'sp_stepSearch' },
+      ];
+    } else {
+      list = [
+        { label: 'sp_usedRow', sym: cell(r.band), res: `${q(BANDS[r.band].valuesMm[r.col])} ≤ ${d}` },
+        r.band < last && { label: 'sp_nextRow', sym: cell(r.band + 1), res: `${q(BANDS[r.band + 1].valuesMm[r.col])} > ${d}` },
+        { label: 'sp_maxVoltage', sym: 'V_{max}', res: V(r.vmax), note: 'sp_stepSearch' },
+      ];
+    }
+  } else if (linear) {
+    list = [at500, { label: 'sp_minSpacing', sym: 'd = d_{500} + c \\cdot (V − \\text{500 V})',
+      num: `${q(d500)} + ${c} \\cdot (${V(Math.abs(v.V))} − ${V(500)})`, res: q(r.mm) + mil(r.mm) }];
+  } else {
+    const b = BANDS[r.band];
+    list = [
+      { label: 'sp_usedRow', sym: `${V(b.from)} < V = ${V(Math.abs(v.V))} ≤ ${V(b.to)}` },
+      { label: 'sp_minSpacing', sym: `d = ${cell(r.band)}`, res: q(r.mm) + mil(r.mm), note: 'sp_stepLookup' },
+    ];
+  }
+  return steps(list, { note: 'sp_note', refs: ['IPC-2221B §6.3, Table 6-1'],
+    where: [r.mode === 'voltage' ? ['d', 'sp_spacing', 'd'] : ['V', 'sp_voltage', 'V'], ['d_{tab}', 'sp_tableTitle'], linear && ['c', 'sp_coef']] });
+}
 
 /**
  * Live cross-section: what the category means physically, and the spacing
@@ -193,19 +255,17 @@ export default {
   },
 
   render(r, v) {
-    const rowLabel = r.band === -2 ? t('sp_rowOver500') : `${BANDS[r.band].from === 0 ? 0 : BANDS[r.band].from + 1}–${BANDS[r.band].to} V`;
+    // band −1: voltage mode with a spacing below the first row (no row applies).
+    const rowLabel = r.band === -2 ? t('sp_rowOver500') : r.band < 0 ? '—' : rowOf(r.band);
     const main = r.mode === 'voltage'
       ? hero('sp_maxVoltage', `${fmt(r.vmax, 4)} <span class="u">V</span>`, esc(t(`cat_${v.cat}`)))
       : hero('sp_minSpacing', mmMil(r.mm), `${mmMilSub(r.mm)} · ${esc(t(`cat_${v.cat}`))}`);
     return main
       + messages('warn', r.warnings)
+      + worked(r, v)
       + rows([['sp_usedRow', esc(r.mode === 'voltage' && r.vmax === 0 ? '—' : rowLabel)]])
       + block('sp_tableTitle', table(r.band, r.col))
       // Fab check: the spacing against the fabricator's minimum gap (B1 = internal layers).
-      + fabCheck({ spaceMm: r.mode === 'voltage' ? r.dMm : r.mm, oz: 1, inner: v.cat === 'B1' }, { note: `${t('fab_n1oz')} ${t('fab_nSpacing')}` })
-      + formulaBlock([
-        'V ≤ 500 V :  d = Table 6-1 [band(V), category]',
-        `V > 500 V :  d = d(301–500 V) + c · (V − 500)   (${v.cat}: c = ${fmt(PER_VOLT[r.col])} mm/V)`,
-      ], 'sp_note', ['IPC-2221B §6.3, Table 6-1']);
+      + fabCheck({ spaceMm: r.mode === 'voltage' ? r.dMm : r.mm, oz: 1, inner: v.cat === 'B1' }, { note: `${t('fab_n1oz')} ${t('fab_nSpacing')}` });
   },
 };

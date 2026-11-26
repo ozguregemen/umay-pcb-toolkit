@@ -1,6 +1,7 @@
 import { fMax, stitching, slot, lcFilter, lcGain } from '../engine/emc.js';
 import { toMm } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { svg, text, path, rect, circle, ring, axes, wave, dimH, twoTerm, wire, node, ground, terminal } from '../ui/svg.js';
 import { t } from '../i18n.js';
@@ -77,6 +78,9 @@ const strings = {
     em_suggest: 'Önerilen sönüm (n = Cd/C = 4)',
     em_suggestV: 'Cd = {cd}, Rd = {rd}',
     em_resp: 'Filtre',
+    em_c0: 'Işığın boşluktaki hızı',
+    em_stepFres: 'Yük bağlıyken rezonans frekansı',
+    em_stepDamped: 'Rd–Cd kolu ile transfer fonksiyonu üçüncü derecedendir; f_x frekansında (ω = 2π·f_x) karmaşık sayılarla hesaplanır ve DC kazancına oranlanır.',
     warn_em_peaking: 'Rezonans tepesi: f0 civarındaki gürültü bastırılmaz, büyütülür. Rd–Cd sönümü, kayıplı bir ferrit boncuk veya daha fazla seri direnç kullanın (ADI AN-1368).',
     warn_em_fxLow: 'İlgilenilen frekans f0’ın altında veya yakınında: filtre burada zayıflatmaz.',
     warn_em_slotRes: 'Yarık bu frekansta rezonansta veya üzerinde: neredeyse hiç ekranlama yok, verimli bir anten gibi ışıyabilir.',
@@ -162,6 +166,9 @@ const strings = {
     em_suggest: 'Suggested damping (n = Cd/C = 4)',
     em_suggestV: 'Cd = {cd}, Rd = {rd}',
     em_resp: 'Filter',
+    em_c0: 'Speed of light in vacuum',
+    em_stepFres: 'Resonant frequency with the load connected',
+    em_stepDamped: 'With the Rd–Cd branch the transfer function is third order; it is evaluated with complex numbers at f_x (ω = 2π·f_x) and referred to the DC gain.',
     warn_em_peaking: 'Resonant peak: noise around f0 is amplified, not attenuated. Use Rd–Cd damping, a lossy ferrite bead or more series resistance (ADI AN-1368).',
     warn_em_fxLow: 'The frequency of interest is below or near f0: the filter does not attenuate there.',
     warn_em_slotRes: 'The slot is at or above resonance at this frequency: almost no shielding, and it can radiate like an efficient antenna.',
@@ -413,74 +420,119 @@ export default {
     return r;
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
+    // Calculation steps: c in mm/ns with f in GHz (1/ns) and lengths in mm, so the units cancel as written.
+    const C = tx(`${fmt(299.792458, 4)} mm/ns`);
+    const fG = (hz) => tx(`${fmt(hz / 1e9, 4)} GHz`);
+    const mmQ = (m) => tx(`${fmt(m * 1000, 4)} mm`);
+    const Hz = (x) => tx(si(x, 'Hz'));
+    const dB = (x) => tx(`${dbText(x, 1)} dB`);
     if (r.mode === 'slot') {
+      const Ls = mmQ(lenM(v.len, u.len));
+      const ee = fmt(v.eeff, 4);
       return heroes([
         ['em_fres', siHtml(r.fRes, 'Hz', 3)],
         ['em_se', r.se > 0 ? `${fixed(r.se, 1)} <span class="u">dB</span>` : t('em_seNone')],
       ])
         + messages('warn', r.warnings)
+        + steps([
+          { label: 'em_fres', sym: 'f_{res} = \\frac{c}{2 \\cdot L \\cdot \\sqrt{ε_{eff}}}', num: `\\frac{${C}}{2 \\cdot ${Ls} \\cdot \\sqrt{${ee}}}`, res: Hz(r.fRes) },
+          { label: 'em_lambdaF', sym: 'λ = \\frac{c}{f \\cdot \\sqrt{ε_{eff}}}', num: `\\frac{${C}}{${fG(r.fHz)} \\cdot \\sqrt{${ee}}}`, res: mmQ(r.lambda) },
+          { label: 'em_se', sym: 'SE ≈ 20 \\cdot \\log_{10}(\\frac{λ}{2 \\cdot L})', num: `20 \\cdot \\log_{10}(\\frac{${mmQ(r.lambda)}}{2 \\cdot ${Ls}})`, res: dB(r.se) },
+          r.lMax !== undefined && { label: 'em_lmax', sym: 'L_{max} = \\frac{λ}{2 \\cdot 10^{SE_t / 20}}',
+            num: `\\frac{${mmQ(r.lambda)}}{2 \\cdot 10^{${fmt(v.tgt, 4)} / 20}}`, res: mmQ(r.lMax) },
+        ], { note: 'em_noteSlot', refs: ['H. W. Ott, Electromagnetic Compatibility Engineering, Wiley 2009, ch. 6'],
+          where: [['L', 'em_len', 'len'], ['ε_{eff}', 'em_eeff', 'eeff'], ['f', 'em_fs', 'fs'], r.lMax !== undefined && ['SE_t', 'em_target', 'tgt'], ['c', 'em_c0']] })
         + block('results', rows([
           ['em_lambdaF', lenStr(r.lambda)],
           ['em_ratio', fmt(r.ratio, 3)],
           r.lMax !== undefined && ['em_lmax', lenStr(r.lMax), true],
-        ]))
-        + formulaBlock([
-          'f_res = c / (2·L·√εeff)',
-          'λ = c / (f·√εeff)',
-          'SE ≈ 20·log10(λ / (2·L))   (single aperture, rough)',
-          'L_max = λ / (2·10^(SE/20))',
-        ], 'em_noteSlot', ['H. W. Ott, Electromagnetic Compatibility Engineering, Wiley 2009, ch. 6']);
+        ]));
     }
     if (r.mode === 'lc') {
       const peak = Number.isFinite(r.peakDb)
         ? `${fixed(r.peakDb, 1)} dB${Number.isFinite(r.peakF) && r.peakDb > 0.05 ? ` · ${t('em_peakAt', { f: si(r.peakF, 'Hz', 3) })}` : ''}`
         : '∞';
+      const O = (x) => tx(si(x, 'Ω'));
+      const L = tx(si(v.l, 'H'));
+      const Cap = tx(si(v.c, 'F'));
+      const rs = O(v.rs > 0 ? v.rs : 0);
+      const load = v.rl > 0;
+      const hasQ = Number.isFinite(r.q);
+      const Q = tx(fmt(r.q, 4));
+      // Bare L–C section at f_x: |H| of the second-order low-pass, referred to its DC gain.
+      const fr = load ? 'f_{res}' : 'f_0';
+      const frQ = Hz(load ? r.fRes : r.f0);
+      const fx = Hz(r.fx);
+      const bare = Number.isFinite(r.attBareDb) && {
+        label: r.damped ? 'em_attBare' : 'em_att',
+        sym: `A = 10 \\cdot \\log_{10}((1 − (\\frac{f_x}{${fr}})^{2})^{2}${hasQ ? ` + (\\frac{f_x}{${fr} \\cdot Q})^{2}` : ''})`,
+        num: `10 \\cdot \\log_{10}((1 − (\\frac{${fx}}{${frQ}})^{2})^{2}${hasQ ? ` + (\\frac{${fx}}{${frQ} \\cdot ${Q}})^{2}` : ''})`,
+        res: dB(r.attBareDb),
+      };
       return heroes([
         ['em_f0', siHtml(r.f0, 'Hz', 3)],
         r.attDb !== undefined && ['em_att', `${fixed(r.attDb, 1)} <span class="u">dB</span>`, `@ ${si(r.fx, 'Hz', 3)}`],
       ])
         + messages('warn', r.warnings)
+        + steps([
+          { label: 'em_f0', sym: 'f_0 = \\frac{1}{2π \\cdot \\sqrt{L \\cdot C}}', num: `\\frac{1}{2π \\cdot \\sqrt{${L} \\cdot ${Cap}}}`, res: Hz(r.f0) },
+          { label: 'em_z0', sym: 'Z_0 = \\sqrt{\\frac{L}{C}}', num: `\\sqrt{\\frac{${L}}{${Cap}}}`, res: O(r.z0) },
+          load && { label: 'em_stepFres', sym: 'f_{res} = f_0 \\cdot \\sqrt{1 + \\frac{R_s}{R_L}}', num: `${Hz(r.f0)} \\cdot \\sqrt{1 + \\frac{${rs}}{${O(v.rl)}}}`, res: Hz(r.fRes) },
+          hasQ && (load
+            ? { label: 'em_q', sym: 'Q = \\frac{\\sqrt{L \\cdot C \\cdot (1 + \\frac{R_s}{R_L})}}{\\frac{L}{R_L} + R_s \\cdot C}',
+              num: `\\frac{\\sqrt{${L} \\cdot ${Cap} \\cdot (1 + \\frac{${rs}}{${O(v.rl)}})}}{\\frac{${L}}{${O(v.rl)}} + ${rs} \\cdot ${Cap}}`, res: Q }
+            : { label: 'em_q', sym: 'Q = \\frac{\\sqrt{L \\cdot C}}{R_s \\cdot C}', num: `\\frac{\\sqrt{${L} \\cdot ${Cap}}}{${rs} \\cdot ${Cap}}`, res: Q }),
+          !r.damped && hasQ && r.q > Math.SQRT1_2 && { label: 'em_peak', sym: 'A_{pk} = 20 \\cdot \\log_{10}(\\frac{Q}{\\sqrt{1 − \\frac{1}{4 \\cdot Q^{2}}}})',
+            num: `20 \\cdot \\log_{10}(\\frac{${Q}}{\\sqrt{1 − \\frac{1}{4 \\cdot {${Q}}^{2}}}})`, res: dB(r.peakDb) },
+          bare,
+          r.damped && Number.isFinite(r.attDb) && { label: 'em_att',
+            sym: `\\frac{1}{Z_p} = j ω C + \\frac{1}{R_d + \\frac{1}{j ω C_d}}${load ? ' + \\frac{1}{R_L}' : ''}, \\quad H = \\frac{Z_p}{R_s + j ω L + Z_p}, \\quad A = −20 \\cdot \\log_{10}(\\frac{|H(f_x)|}{|H(0)|})`,
+            res: dB(r.attDb), note: 'em_stepDamped' },
+          { label: 'em_suggest', sym: 'C_{d,opt} = n \\cdot C', num: `4 \\cdot ${Cap}`, res: tx(si(r.suggest.cd, 'F')) },
+          { label: 'em_suggest', sym: 'R_{d,opt} = Z_0 \\cdot \\sqrt{\\frac{(2 + n) \\cdot (4 + 3 \\cdot n)}{2 \\cdot n^{2} \\cdot (4 + n)}}',
+            num: `${O(r.z0)} \\cdot \\sqrt{\\frac{(2 + 4) \\cdot (4 + 3 \\cdot 4)}{2 \\cdot 4^{2} \\cdot (4 + 4)}}`, res: O(r.suggest.rd) },
+        ], { note: 'em_noteLc', refs: [
+          'Analog Devices AN-1368 “Ferrite Bead Demystified”',
+          'R. W. Erickson, D. Maksimović, Fundamentals of Power Electronics, §10.4',
+          'H. W. Ott, Electromagnetic Compatibility Engineering (2009)',
+        ], where: [['L', 'em_l', 'l'], ['C', 'em_c', 'c'], ['R_s', 'em_rs', 'rs'], load && ['R_L', 'em_rl', 'rl'], ['f_x', 'em_fx', 'fx'],
+          r.damped && ['R_d', 'em_rd', 'rd'], r.damped && ['C_d', 'em_cd', 'cd']] })
         + block('em_resp', rows([
           ['em_z0', si(r.z0, 'Ω', 3)],
           ['em_q', Number.isFinite(r.q) ? fmt(r.q, 3) : '∞'],
           ['em_peak', peak],
           r.damped && r.attBareDb !== undefined && ['em_attBare', `${fixed(r.attBareDb, 1)} dB`],
           ['em_suggest', t('em_suggestV', { cd: si(r.suggest.cd, 'F', 3), rd: si(r.suggest.rd, 'Ω', 3) })],
-        ]))
-        + formulaBlock([
-          'f0 = 1 / (2π·√(L·C))      Z0 = √(L/C)',
-          'H(s) = 1 / (L·C·s² + (L/RL + Rs·C)·s + 1 + Rs/RL)',
-          'Q = √(L·C·(1 + Rs/RL)) / (L/RL + Rs·C)      (no load: Q = Z0/Rs)',
-          'peak = Q / √(1 − 1/(4Q²))  for Q > 0.707',
-          'Rd–Cd damping, n = Cd/C:  Rd,opt = Z0·√((2 + n)(4 + 3n) / (2n²(4 + n)))',
-        ], 'em_noteLc', [
-          'Analog Devices AN-1368 “Ferrite Bead Demystified”',
-          'R. W. Erickson, D. Maksimović, Fundamentals of Power Electronics, §10.4',
-          'H. W. Ott, Electromagnetic Compatibility Engineering (2009)',
-        ]);
+        ]));
     }
+    const div = v.rule === '10' ? 10 : 20;
+    const src = v.fsrc;
     return heroes([
       ['em_pitch', `${fmt(r.pitch * 1000, 3)} <span class="u">mm</span>`, isImperial() ? `${fmt((r.pitch * 1000) / 0.0254, 3)} mil` : ''],
       ['em_fmax', siHtml(r.fHz, 'Hz', 3)],
     ])
       + messages('warn', r.warnings)
+      + steps([
+        src === 'tr' && { label: 'em_fmax', sym: `f_{max} = \\frac{${fmt(0.35)}}{t_r}`,
+          num: `\\frac{${fmt(0.35)}}{${tx(si(v.tr * (u.tr === 'ps' ? 1e-12 : 1e-9), 's'))}}`, res: Hz(r.fHz) },
+        src === 'clk' && { label: 'em_fmax', sym: 'f_{max} = n \\cdot f_{clk}', num: `${fmt(v.harm, 4)} \\cdot ${Hz(v.fclk * FMUL[u.fclk])}`, res: Hz(r.fHz) },
+        { label: 'em_lambda', sym: 'λ = \\frac{c}{f_{max} \\cdot \\sqrt{ε_r}}', num: `\\frac{${C}}{${fG(r.fHz)} \\cdot \\sqrt{${fmt(v.er, 4)}}}`, res: mmQ(r.lambda) },
+        { label: 'em_pitch', sym: `p = \\frac{λ}{${div}}`, num: `\\frac{${mmQ(r.lambda)}}{${div}}`, res: mmQ(r.pitch) },
+        r.count !== undefined && { label: 'em_count', sym: 'N = ⌈\\frac{l_{edge}}{p}⌉ + 1',
+          num: `⌈\\frac{${mmQ(lenM(v.edge, u.edge))}}{${mmQ(r.pitch)}}⌉ + 1`, res: String(r.count) },
+      ], { note: 'em_noteVia', refs: [
+        'M. K. Armstrong, “PCB design techniques for lowest-cost EMC compliance”, IEE ECEJ 11(4), 1999',
+        'H. W. Ott, Electromagnetic Compatibility Engineering, Wiley 2009',
+        'H. Johnson, M. Graham, High-Speed Digital Design (1993)',
+      ], where: [src === 'tr' && ['t_r', 'em_tr', 'tr'], src === 'clk' && ['f_{clk}', 'em_fclk', 'fclk'], src === 'clk' && ['n', 'em_harm', 'harm'],
+        src === 'f' && ['f_{max}', 'em_f', 'f'], ['ε_r', 'em_er', 'er'], r.count !== undefined && ['l_{edge}', 'em_edge', 'edge'], ['c', 'em_c0']] })
       + block('results', rows([
         ['em_lambda', lenStr(r.lambda)],
         ['λ / 10', lenStr(r.l10), false, true],
         ['λ / 20', lenStr(r.l20), false, true],
         r.count !== undefined && ['em_count', `${r.count}`, true],
-      ]))
-      + formulaBlock([
-        'f_max = 0.35 / tr   or   N·f_clk',
-        'λ = c / (f_max·√εr)',
-        'pitch ≤ λ/20   (λ/10 at most)',
-        'N_vias = ⌈edge / pitch⌉ + 1',
-      ], 'em_noteVia', [
-        'M. K. Armstrong, “PCB design techniques for lowest-cost EMC compliance”, IEE ECEJ 11(4), 1999',
-        'H. W. Ott, Electromagnetic Compatibility Engineering, Wiley 2009',
-        'H. Johnson, M. Graham, High-Speed Digital Design (1993)',
-      ]);
+      ]));
   },
 };

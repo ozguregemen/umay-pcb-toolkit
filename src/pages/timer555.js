@@ -1,7 +1,8 @@
 import { astable, astableDesign, monostable } from '../engine/timer555.js';
 import { nearestStandard } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, invalid } from '../ui/calculator.js';
-import { fixed, si, siHtml } from '../ui/format.js';
+import { heroes, rows, block, steps, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
+import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, text, rect, path, dimH, axes, wave } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
@@ -211,16 +212,47 @@ export default {
     return { mode: 'astable', ...astable(v.r1, v.r2, v.c) };
   },
 
-  render(r) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
+    // Calculation steps. The engine uses ln 2 (0.693) exactly; it is shown rounded.
+    // Design mode keeps six digits in the intermediate values because R1 is a difference.
+    const q = (x, unit, sig = 4) => tx(si(x, unit, sig));
+    const ln2 = fmt(Math.LN2, 6);
+    const C = q(v.c, 'F', 6);
+    const pc = (x) => tx(`${fmt(x * 100, 4)} %`);
+    const opts = { note: 'tm_note', refs: ['TI NE555 datasheet'] };
     if (r.mode === 'mono') {
-      return heroes([['tm_pulse', siHtml(r.t, 's')]]) + formulaBlock(['t = 1.1 · R · C'], 'tm_note', ['TI NE555 datasheet']);
+      return heroes([['tm_pulse', siHtml(r.t, 's')]])
+        + steps([
+          { label: 'tm_pulse', sym: `t = ${fmt(1.1)} \\cdot R \\cdot C`, num: `${fmt(1.1)} \\cdot ${q(v.r, 'Ω', 6)} \\cdot ${C}`, res: q(r.t, 's') },
+        ], { ...opts, where: [['R', 'tm_r', 'r'], ['C', 'tm_c', 'c']] });
     }
     const a = r.mode === 'design' ? r.check : r;
     const main = r.mode === 'design'
       ? heroes([['tm_r1', siHtml(r.r1, 'Ω')], ['tm_r2', siHtml(r.r2, 'Ω')]])
       : heroes([['tm_freq', siHtml(a.f, 'Hz')], ['tm_dutyOut', `${fixed(a.duty * 100, 1)} <span class="u">%</span>`]]);
+    const T = r.target;
+    const worked = r.mode === 'design'
+      ? steps([
+        { label: 'tm_period', sym: 'T = \\frac{1}{f}', num: `\\frac{1}{${q(v.f * (u.f === 'kHz' ? 1e3 : 1), 'Hz', 6)}}`, res: q(T.period, 's', 6) },
+        { label: 'tm_tl', sym: 't_L = T \\cdot (1 − D)', num: `${q(T.period, 's', 6)} \\cdot (1 − ${fmt(v.d / 100, 6)})`, res: q(T.tLow, 's', 6) },
+        { label: 'tm_th', sym: 't_H = T \\cdot D', num: `${q(T.period, 's', 6)} \\cdot ${fmt(v.d / 100, 6)}`, res: q(T.tHigh, 's', 6) },
+        { label: 'tm_r2', sym: 'R_2 = \\frac{t_L}{\\ln\\,2 \\cdot C}', num: `\\frac{${q(T.tLow, 's', 6)}}{${ln2} \\cdot ${C}}`, res: q(r.r2, 'Ω', 6) },
+        { label: 'tm_r1', sym: 'R_1 = \\frac{t_H}{\\ln\\,2 \\cdot C} − R_2', num: `\\frac{${q(T.tHigh, 's', 6)}}{${ln2} \\cdot ${C}} − ${q(r.r2, 'Ω', 6)}`, res: q(r.r1, 'Ω') },
+        { label: 'tm_freq', sym: 'f = \\frac{1}{\\ln\\,2 \\cdot (R_{1,E24} + 2 \\cdot R_{2,E24}) \\cdot C}',
+          num: `\\frac{1}{${ln2} \\cdot (${q(r.r1s, 'Ω')} + 2 \\cdot ${q(r.r2s, 'Ω')}) \\cdot ${C}}`, res: q(a.f, 'Hz') },
+        { label: 'tm_dutyOut', sym: 'D = \\frac{R_{1,E24} + R_{2,E24}}{R_{1,E24} + 2 \\cdot R_{2,E24}}',
+          num: `\\frac{${q(r.r1s, 'Ω')} + ${q(r.r2s, 'Ω')}}{${q(r.r1s, 'Ω')} + 2 \\cdot ${q(r.r2s, 'Ω')}}`, res: pc(a.duty) },
+      ], { ...opts, where: [['f', 'tm_f', 'f'], ['D', 'tm_duty', 'd'], ['C', 'tm_c', 'c'], ['R_{1,E24}', 'tm_r1std'], ['R_{2,E24}', 'tm_r2std']] })
+      : steps([
+        { label: 'tm_th', sym: 't_H = \\ln\\,2 \\cdot (R_1 + R_2) \\cdot C', num: `${ln2} \\cdot (${q(v.r1, 'Ω', 6)} + ${q(v.r2, 'Ω', 6)}) \\cdot ${C}`, res: q(a.tHigh, 's') },
+        { label: 'tm_tl', sym: 't_L = \\ln\\,2 \\cdot R_2 \\cdot C', num: `${ln2} \\cdot ${q(v.r2, 'Ω', 6)} \\cdot ${C}`, res: q(a.tLow, 's') },
+        { label: 'tm_period', sym: 'T = t_H + t_L', num: `${q(a.tHigh, 's')} + ${q(a.tLow, 's')}`, res: q(a.period, 's') },
+        { label: 'tm_freq', sym: 'f = \\frac{1}{T}', num: `\\frac{1}{${q(a.period, 's')}}`, res: q(a.f, 'Hz') },
+        { label: 'tm_dutyOut', sym: 'D = \\frac{t_H}{T}', num: `\\frac{${q(a.tHigh, 's')}}{${q(a.period, 's')}}`, res: pc(a.duty) },
+      ], { ...opts, where: [['R_1', 'tm_r1', 'r1'], ['R_2', 'tm_r2', 'r2'], ['C', 'tm_c', 'c']] });
     return main
+      + worked
       + block('results', rows([
         r.mode === 'design' && ['tm_r1std', si(r.r1s, 'Ω')],
         r.mode === 'design' && ['tm_r2std', si(r.r2s, 'Ω')],
@@ -229,10 +261,6 @@ export default {
         ['tm_th', si(a.tHigh, 's')],
         ['tm_tl', si(a.tLow, 's')],
         ['tm_period', si(a.period, 's')],
-      ]))
-      + formulaBlock([
-        't_high = 0.693·(R1 + R2)·C     t_low = 0.693·R2·C',
-        'f = 1.44 / ((R1 + 2·R2)·C)     D = (R1 + R2) / (R1 + 2·R2)',
-      ], 'tm_note', ['TI NE555 datasheet']);
+      ]));
   },
 };

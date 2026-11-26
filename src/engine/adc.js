@@ -41,5 +41,5 @@ export function adcCode(vin, p) {
   const { lsb, codeMin, codeMax } = adcBasics(p);
   const raw = Math.round(vin / lsb);
   const code = Math.min(codeMax, Math.max(codeMin, raw)) || 0; // no −0
-  return { code, clipped: raw !== code, err: vin - code * lsb, lsb };
+  return { code, clipped: raw !== code, err: vin - code * lsb, lsb, raw }; // raw: before clamping to the code range
 }

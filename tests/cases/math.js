@@ -18,6 +18,33 @@ for (const tool of TOOLS) {
   } catch { /* reported by "every module loads" */ }
 }
 
+const fieldsOf = (page) => page.sections.flatMap((s) => s.fields);
+
+/** Default inputs, plus one variant per option of every choice/select (with its `set` values). */
+function variants(page) {
+  const raw0 = {};
+  const units0 = {};
+  for (const f of fieldsOf(page)) {
+    raw0[f.key] = f.default === undefined || f.default === null ? '' : String(f.default);
+    if (f.type === 'number') units0[f.key] = f.unit ?? f.units?.[0];
+  }
+  const list = [{ raw: raw0, units: units0 }];
+  for (const f of fieldsOf(page)) {
+    for (const o of f.options ?? []) {
+      if (String(o.value) === raw0[f.key]) continue;
+      const raw = { ...raw0, [f.key]: String(o.value) };
+      const units = { ...units0 };
+      for (const [k, val] of Object.entries(o.set ?? {})) {
+        raw[k] = String(val);
+        const ff = fieldsOf(page).find((x) => x.key === k);
+        if (ff?.type === 'number' && ff.units) units[k] = ff.unit ?? ff.units[0];
+      }
+      list.push({ raw, units, label: `${f.key}=${o.value}` });
+    }
+  }
+  return list;
+}
+
 export const cases = [
   ['math: fractions, roots, sub- and superscripts become MathML', () => {
     eq(inner('\\frac{a}{b}'), '<mfrac><mrow><mi>a</mi></mrow><mrow><mi>b</mi></mrow></mfrac>', 'fraction');
@@ -73,24 +100,27 @@ export const cases = [
     try {
       for (const page of pages) {
         if (page.mount || !page.render) continue;
-        const raw = {};
-        const units = {};
-        for (const f of page.sections.flatMap((s) => s.fields)) {
-          raw[f.key] = f.type === 'number' ? parseNumber(f.default === undefined || f.default === null ? '' : String(f.default), f.si) : String(f.default ?? '');
-          if (f.type === 'number') units[f.key] = f.unit ?? f.units?.[0];
+        let any = false;
+        // Defaults, then every option of every choice/select field (with the values it sets).
+        for (const { raw, units, label = 'defaults' } of variants(page)) {
+          const v = {};
+          for (const f of fieldsOf(page)) v[f.key] = f.type === 'number' ? parseNumber(raw[f.key], f.si) : raw[f.key];
+          for (const lang of ['tr', 'en']) {
+            setLang(lang);
+            const where = `${page.id} [${label}] (${lang})`;
+            let html;
+            try { html = page.render(page.compute(v, units), v, units); } catch (e) { problems.push(`${where}: ${e.message}`); continue; }
+            if (!html.includes('class="block steps"')) continue;
+            any = true;
+            const block = html.split('class="block steps"')[1].split('</details>')[0];
+            if ((block.match(/<math>/g) ?? []).length !== (block.match(/<\/math>/g) ?? []).length) problems.push(`${where}: unbalanced <math>`);
+            if (/<m(i|n|text)>[^<]*(NaN|undefined|Infinity|—)[^<]*</.test(block)) problems.push(`${where}: NaN, undefined or a missing value in a step`);
+            if (/<mi>(frac|sqrt|text|cdot|times)<\/mi>/.test(block)) problems.push(`${where}: unparsed command`);
+            if (!block.includes('class="refs"')) problems.push(`${where}: steps without sources`);
+            if (!block.includes('<li ')) problems.push(`${where}: empty steps block`);
+          }
         }
-        for (const lang of ['tr', 'en']) {
-          setLang(lang);
-          let html;
-          try { html = page.render(page.compute(raw, units), raw, units); } catch (e) { problems.push(`${page.id} (${lang}): ${e.message}`); continue; }
-          if (!html.includes('class="block steps"')) continue;
-          if (lang === 'tr') withSteps++;
-          const block = html.split('class="block steps"')[1].split('</details>')[0];
-          if ((block.match(/<math>/g) ?? []).length !== (block.match(/<\/math>/g) ?? []).length) problems.push(`${page.id} (${lang}): unbalanced <math>`);
-          if (/<m(i|n|text)>[^<]*(NaN|undefined|Infinity|—)[^<]*</.test(block)) problems.push(`${page.id} (${lang}): NaN, undefined or a missing value in a step`);
-          if (/<mi>(frac|sqrt|text|cdot|times)<\/mi>/.test(block)) problems.push(`${page.id} (${lang}): unparsed command`);
-          if (!block.includes('class="refs"')) problems.push(`${page.id} (${lang}): steps without sources`);
-        }
+        if (any) withSteps++;
       }
     } finally {
       setLang(before);
