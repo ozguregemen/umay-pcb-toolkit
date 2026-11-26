@@ -1,6 +1,7 @@
 import { dividerAnalyse, dividerDesign, feedbackDivider, dividerTolerance, feedbackTolerance } from '../engine/circuit.js';
 import { TOLERANCE } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, arrow, text, block as icBlock } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -146,6 +147,9 @@ const isMode = (m) => (v) => v.mode === m;
 const pct = (x) => new Intl.NumberFormat(locale(), { style: 'percent', signDisplay: 'exceptZero', maximumSignificantDigits: 3 })
   .format(Math.abs(x) < 1e-9 ? 0 : x / 100);
 const ohm = (x) => si(x, 'Ω');
+// Values as they appear inside the calculation steps.
+const qV = (x) => tx(si(x, 'V'));
+const qR = (x) => tx(si(x, 'Ω'));
 
 function powerWarning(warnings, vars, ...p) {
   const max = Math.max(...p);
@@ -155,7 +159,7 @@ function powerWarning(warnings, vars, ...p) {
   }
 }
 
-function renderAnalyse(r) {
+function renderAnalyse(r, v) {
   const warnings = [];
   const vars = {};
   if (r.loaded && Math.abs(r.loadErrorPct) > 1) {
@@ -168,19 +172,24 @@ function renderAnalyse(r) {
     r.loaded && ['dv_voutLoaded', siHtml(r.vout, 'V'), `${esc(t('dv_loadError'))}: ${pct(r.loadErrorPct)}`],
   ])
     + messages('warn', warnings, vars)
+    + steps([
+      { label: 'dv_voutOpen', sym: 'V_{out} = V_{in} \\cdot \\frac{R_2}{R_1 + R_2}',
+        num: `${qV(v.vin)} \\cdot \\frac{${qR(v.r2)}}{${qR(v.r1)} + ${qR(v.r2)}}`, res: qV(r.voutOpen) },
+      r.loaded && { label: 'dv_rl', sym: 'R_{2∥L} = \\frac{R_2 \\cdot R_L}{R_2 + R_L}',
+        num: `\\frac{${qR(v.r2)} \\cdot ${qR(v.rl)}}{${qR(v.r2)} + ${qR(v.rl)}}`, res: qR((v.r2 * v.rl) / (v.r2 + v.rl)) },
+      r.loaded && { label: 'dv_voutLoaded', sym: 'V_{out} = V_{in} \\cdot \\frac{R_{2∥L}}{R_1 + R_{2∥L}}',
+        num: `${qV(v.vin)} \\cdot \\frac{${qR((v.r2 * v.rl) / (v.r2 + v.rl))}}{${qR(v.r1)} + ${qR((v.r2 * v.rl) / (v.r2 + v.rl))}}`, res: qV(r.vout) },
+      { label: 'dv_current', sym: 'I = \\frac{V_{in}}{R_1 + R_2}', num: `\\frac{${qV(v.vin)}}{${qR(v.r1)} + ${qR(v.r2)}}`, res: tx(si(r.iDivider, 'A')) },
+      { label: 'dv_rth', sym: 'R_{th} = \\frac{R_1 \\cdot R_2}{R_1 + R_2}',
+        num: `\\frac{${qR(v.r1)} \\cdot ${qR(v.r2)}}{${qR(v.r1)} + ${qR(v.r2)}}`, res: qR(r.rth) },
+    ], { note: 'dv_noteAnalyse', where: [['V_{in}', 'dv_vin', 'vin'], ['R_1', 'dv_r1', 'r1'], ['R_2', 'dv_r2', 'r2'], r.loaded && ['R_L', 'dv_rl', 'rl']], refs: ['Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 1 (dividers, Thévenin equivalent)'] })
     + block('dv_details', rows([
       ['dv_current', si(r.iDivider, 'A')],
       r.loaded && ['dv_iLoad', si(r.iLoad, 'A')],
       ['dv_pR1', si(r.pR1, 'W')],
       ['dv_pR2', si(r.pR2, 'W')],
       ['dv_rth', ohm(r.rth)],
-    ]))
-    + formulaBlock([
-      'Vout = Vin · R2 / (R1 + R2)',
-      'with load:  R2′ = R2 ∥ RL = R2 · RL / (R2 + RL),  Vout = Vin · R2′ / (R1 + R2′)',
-      'I = Vin / (R1 + R2),   P_R1 = (Vin − Vout)² / R1,   P_R2 = Vout² / R2',
-      'R_th = R1 ∥ R2 = R1 · R2 / (R1 + R2)',
-    ], 'dv_noteAnalyse', ['Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 1 (dividers, Thévenin equivalent)']);
+    ]));
 }
 
 function renderDesign(r, v) {
@@ -194,6 +203,13 @@ function renderDesign(r, v) {
     ['dv_voutStd', siHtml(r.voutStd, 'V'), `${esc(t('dv_error'))}: ${pct(r.errorPct)}`],
   ])
     + messages('warn', warnings, vars)
+    + steps([
+      { label: 'dv_r2Exact', sym: 'R_2 = R_{total} \\cdot \\frac{V_{out}}{V_{in}}',
+        num: `${qR(v.rt)} \\cdot \\frac{${qV(v.vout)}}{${qV(v.vin)}}`, res: qR(r.r2Exact) },
+      { label: 'dv_r1Exact', sym: 'R_1 = R_{total} − R_2', num: `${qR(v.rt)} − ${qR(r.r2Exact)}`, res: qR(r.r1Exact) },
+      { label: 'dv_voutStd', sym: 'V_{out} = V_{in} \\cdot \\frac{R_2}{R_1 + R_2}',
+        num: `${qV(v.vin)} \\cdot \\frac{${qR(r.pair.r2)}}{${qR(r.pair.r1)} + ${qR(r.pair.r2)}}`, res: qV(r.voutStd) },
+    ], { note: 'dv_noteDesign', refs: ['IEC 60063:2015 (E-series)'] })
     + block(t('dv_stdTitle', { series: v.ser }), rows([
       ['dv_sum', ohm(r.pair.sum)],
       ['dv_ratio', `${fmt(r.pair.ratio, 5)} · ${esc(t('dv_target'))} ${fmt(r.ratio, 5)}`],
@@ -206,12 +222,7 @@ function renderDesign(r, v) {
     + block('dv_exactTitle', rows([
       ['dv_r1Exact', ohm(r.r1Exact)],
       ['dv_r2Exact', ohm(r.r2Exact)],
-    ]))
-    + formulaBlock([
-      'R2 = R_total · Vout / Vin,   R1 = R_total − R2',
-      'best pair:  min | R2 / (R1 + R2) − Vout / Vin |',
-      '            over E-series R1, R2 with 0.5 · R_total ≤ R1 + R2 ≤ 2 · R_total',
-    ], 'dv_noteDesign', ['IEC 60063:2015 (E-series)']);
+    ]));
 }
 
 function renderFb(r, v) {
@@ -223,6 +234,13 @@ function renderFb(r, v) {
     ['dv_voutStd', siHtml(r.vout, 'V'), `${esc(t('dv_error'))}: ${pct(r.errorPct)}`],
   ])
     + messages('warn', warnings)
+    + steps([
+      { label: 'dv_fbExact', sym: 'R_1 = R_2 \\cdot (\\frac{V_{out}}{V_{ref}} − 1)',
+        num: `${qR(v.r2)} \\cdot (\\frac{${qV(v.vout)}}{${qV(v.vref)}} − 1)`, res: qR(r.r1Exact) },
+      { label: 'dv_voutStd', sym: 'V_{out} = V_{ref} \\cdot (1 + \\frac{R_1}{R_2})',
+        num: `${qV(v.vref)} \\cdot (1 + \\frac{${qR(r.r1)}}{${qR(v.r2)}})`, res: qV(r.vout) },
+      { label: 'dv_iFb', sym: 'I_{FB} = \\frac{V_{ref}}{R_2}', num: `\\frac{${qV(v.vref)}}{${qR(v.r2)}}`, res: tx(si(r.iFb, 'A')) },
+    ], { note: 'dv_noteFb', refs: ['Adjustable regulator datasheets (FB divider)', 'IEC 60063:2015 (E-series)'] })
     + block('dv_details', rows([
       ['dv_fbExact', ohm(r.r1Exact)],
       ['dv_r2Std', ohm(v.r2)],
@@ -233,12 +251,7 @@ function renderFb(r, v) {
       ['dv_r1Std', ohm(r.pair.r1)],
       ['dv_r2Std', ohm(r.pair.r2)],
       ['dv_voutStd', `${si(r.pair.vout, 'V', 5)} (${pct(r.pair.errorPct)})`, true],
-    ]), true) : '')
-    + formulaBlock([
-      'Vout = Vref · (1 + R1 / R2)',
-      'R1   = R2 · (Vout / Vref − 1)',
-      'I_FB = Vref / R2',
-    ], 'dv_noteFb', ['Adjustable regulator datasheets (FB divider)', 'IEC 60063:2015 (E-series)']);
+    ]), true) : '');
 }
 
 /** Live schematic: shows the values in use and the resulting output voltage. */
@@ -351,6 +364,6 @@ export default {
       ]) + `<p class="note">${esc(t('dv_tolNote'))}</p>`)
       : '';
     if (r.mode === 'fb') return renderFb(r, { ...v, r2: v.r2fb }) + tol;
-    return renderAnalyse(r) + tol;
+    return renderAnalyse(r, v) + tol;
   },
 };

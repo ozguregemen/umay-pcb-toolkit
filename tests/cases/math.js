@@ -1,0 +1,101 @@
+// Formula notation (ui/math.js) and the calculation-steps block.
+
+import { ok, eq } from '../assert.js';
+import { tex, texPlain, tx } from '../../src/ui/math.js';
+import { steps, parseNumber } from '../../src/ui/calculator.js';
+import { TOOLS } from '../../src/registry.js';
+import { registerStrings, setLang, getLang } from '../../src/i18n.js';
+
+const inner = (s) => tex(s).replace(/^<math>|<\/math>$/g, '');
+
+// Pages are loaded once for the "every calculator" case below.
+const pages = [];
+for (const tool of TOOLS) {
+  try {
+    const page = (await tool.load()).default;
+    if (page.strings) registerStrings(page.strings);
+    pages.push(page);
+  } catch { /* reported by "every module loads" */ }
+}
+
+export const cases = [
+  ['math: fractions, roots, sub- and superscripts become MathML', () => {
+    eq(inner('\\frac{a}{b}'), '<mfrac><mrow><mi>a</mi></mrow><mrow><mi>b</mi></mrow></mfrac>', 'fraction');
+    eq(inner('\\sqrt{x + 1}'), '<msqrt><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></msqrt>', 'root');
+    eq(inner('x^2'), '<msup><mrow><mi>x</mi></mrow><mrow><mn>2</mn></mrow></msup>', 'power without braces');
+    eq(inner('R_{th}'), '<msub><mrow><mi>R</mi></mrow><mrow><mi>th</mi></mrow></msub>', 'subscript');
+    eq(inner('x_i^2'), '<msubsup><mrow><mi>x</mi></mrow><mrow><mi>i</mi></mrow><mrow><mn>2</mn></mrow></msubsup>', 'both');
+    eq(inner('a \\cdot b - 3,5'), '<mi>a</mi><mo>·</mo><mi>b</mi><mo>−</mo><mn>3,5</mn>', 'operators, minus sign, decimal comma');
+    eq(inner('ΔT'), '<mi mathvariant="normal">Δ</mi><mi>T</mi>', 'Δ is its own upright symbol');
+    eq(inner('\\ln(x)'), '<mi>ln</mi><mo>(</mo><mi>x</mi><mo>)</mo>', 'function name');
+    eq(inner(tx('3,3 V')), '<mtext>3,3 V</mtext>', 'value with unit');
+    eq(inner('\\text{<b>}'), '<mtext>&lt;b&gt;</mtext>', 'text is escaped');
+    eq(tx('a}b\\c{'), '\\text{abc}', 'tx removes braces and backslashes');
+  }],
+
+  ['math: broken input never throws or hangs', () => {
+    for (const s of ['', '}', '{', '\\frac', '\\frac{a}', '^', '_', 'a^', '\\text{abc', '\\', '{{{', 'x_{', '\\sqrt', '}}a{{']) {
+      const out = tex(s);
+      ok(out.startsWith('<math>') && out.endsWith('</math>'), `tex(${JSON.stringify(s)})`);
+      ok(typeof texPlain(s) === 'string', `texPlain(${JSON.stringify(s)})`);
+    }
+    eq(tex(undefined), '<math></math>', 'undefined');
+  }],
+
+  ['math: plain-text form for copied summaries', () => {
+    eq(texPlain('V_{out} = V_{in} \\cdot \\frac{R_2}{R_1 + R_2}'), 'V_out = V_in · R_2/(R_1 + R_2)', 'divider');
+    eq(texPlain('\\frac{1}{2 π \\sqrt{L C}}'), '1/(2π√(LC))', 'resonance');
+    eq(texPlain(`${tx('3,3 V')} \\cdot \\frac{${tx('10 kΩ')}}{${tx('20 kΩ')}}`), '3,3 V · 10 kΩ/20 kΩ', 'numbers');
+    eq(texPlain('I^{2} \\cdot R'), 'I^2 · R', 'power');
+    eq(texPlain('k \\cdot ΔT^{0.44} \\cdot A^{0.725}'), 'k · ΔT^0.44 · A^0.725', 'IPC-2221');
+  }],
+
+  ['steps: block carries labels, the three parts, sources and a plain-text copy', () => {
+    registerStrings({ tr: { t_lab: 'Çıkış', t_note: 'Not' }, en: { t_lab: 'Output', t_note: 'Note' } });
+    const html = steps([
+      { label: 't_lab', sym: 'V = I \\cdot R', num: `${tx('2 A')} \\cdot ${tx('5 Ω')}`, res: tx('10 V') },
+      false,
+      { labelRaw: 'A <b>', sym: 'P = V \\cdot I' },
+    ], { note: 't_note', refs: ['Source <1>'], where: [['I', 't_lab', 'cur']] });
+    ok(html.includes('class="block steps"'), 'block');
+    eq(html.match(/<li /g).length, 2, 'falsy steps are skipped');
+    ok(html.includes('<span class="step-res"><math><mo>=</mo><mtext>10 V</mtext></math></span>'), 'result part');
+    ok(/data-plain="(Çıkış|Output): V = I · R = 2 A · 5 Ω = 10 V"/.test(html), 'plain text of step 1');
+    ok(html.includes('A &lt;b&gt;') && !html.includes('A <b>'), 'raw label is escaped');
+    ok(html.includes('class="refs"') && html.includes('Source &lt;1&gt;'), 'sources');
+    ok(html.includes('data-hl="cur"'), 'symbol list links to the input');
+  }],
+
+  ['steps: calculators that show steps render complete formulas in both languages', () => {
+    const before = getLang();
+    const problems = [];
+    let withSteps = 0;
+    try {
+      for (const page of pages) {
+        if (page.mount || !page.render) continue;
+        const raw = {};
+        const units = {};
+        for (const f of page.sections.flatMap((s) => s.fields)) {
+          raw[f.key] = f.type === 'number' ? parseNumber(f.default === undefined || f.default === null ? '' : String(f.default), f.si) : String(f.default ?? '');
+          if (f.type === 'number') units[f.key] = f.unit ?? f.units?.[0];
+        }
+        for (const lang of ['tr', 'en']) {
+          setLang(lang);
+          let html;
+          try { html = page.render(page.compute(raw, units), raw, units); } catch (e) { problems.push(`${page.id} (${lang}): ${e.message}`); continue; }
+          if (!html.includes('class="block steps"')) continue;
+          if (lang === 'tr') withSteps++;
+          const block = html.split('class="block steps"')[1].split('</details>')[0];
+          if ((block.match(/<math>/g) ?? []).length !== (block.match(/<\/math>/g) ?? []).length) problems.push(`${page.id} (${lang}): unbalanced <math>`);
+          if (/<m(i|n|text)>[^<]*(NaN|undefined|Infinity|—)[^<]*</.test(block)) problems.push(`${page.id} (${lang}): NaN, undefined or a missing value in a step`);
+          if (/<mi>(frac|sqrt|text|cdot|times)<\/mi>/.test(block)) problems.push(`${page.id} (${lang}): unparsed command`);
+          if (!block.includes('class="refs"')) problems.push(`${page.id} (${lang}): steps without sources`);
+        }
+      }
+    } finally {
+      setLang(before);
+    }
+    ok(problems.length === 0, `\n${problems.slice(0, 20).join('\n')}`);
+    ok(withSteps >= 10, `expected at least 10 calculators with steps, found ${withSteps}`);
+  }],
+];

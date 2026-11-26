@@ -1,5 +1,6 @@
 import { ldoPower, junction } from '../engine/power.js';
-import { heroes, rows, block, formulaBlock, checks, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, checks, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { svg, twoTerm, wire, node, ground, text, arrow } from '../ui/svg.js';
@@ -193,14 +194,29 @@ export default {
     return { ok: true, ...r, powerW, eff, chain: isChain(v) };
   },
 
-  render(r) {
+  render(r, v) {
     if (!r.ok) return invalid(r.errors);
     const main = heroes([
       ['th_tj', `${fixed(r.tj, 1)} <span class="u">°C</span>`],
       ['th_power', `${fmt(r.powerW, 4)} <span class="u">W</span>`],
     ]);
+    const C = (x) => tx(`${fixed(x, 1)} °C`);
+    const W = (x) => tx(`${fmt(x, 4)} W`);
+    const K = (x) => tx(`${fmt(x, 4)} °C/W`);
+    const cs = Number.isFinite(v.cs) ? v.cs : 0;
+    const iq = (v.iq || 0) / 1000;
     return main
       + block('th_checks', checks([[r.margin >= 0, esc(t('th_ok')), `${fixed(r.margin, 1)} °C`]]))
+      + steps([
+        r.eff !== null && { label: 'th_power', sym: 'P = (V_{in} − V_{out}) \\cdot I_{out} + V_{in} \\cdot I_q',
+          num: `(${tx(si(v.vin, 'V'))} − ${tx(si(v.vout, 'V'))}) \\cdot ${tx(si(v.io, 'A'))} + ${tx(si(v.vin, 'V'))} \\cdot ${tx(si(iq, 'A'))}`, res: W(r.powerW) },
+        r.chain && { label: 'th_thetaTotal', sym: 'θ_{JA} = θ_{JC} + θ_{CS} + θ_{SA}', num: `${K(v.jc)} + ${K(cs)} + ${K(v.sa)}`, res: K(r.thetaTotal) },
+        { label: 'th_tj', sym: 'T_j = T_a + P \\cdot θ_{JA}', num: `${C(v.ta)} + ${W(r.powerW)} \\cdot ${K(r.thetaTotal)}`, res: C(r.tj) },
+        Number.isFinite(r.maxPower) && { label: 'th_maxP', sym: 'P_{max} = \\frac{T_{j,max} − T_a}{θ_{JA}}', num: `\\frac{${C(v.tj)} − ${C(v.ta)}}{${K(r.thetaTotal)}}`, res: W(r.maxPower) },
+        r.chain && r.requiredThetaSA > 0 && { label: 'th_reqSA', sym: 'θ_{SA,req} = \\frac{T_{j,max} − T_a}{P} − θ_{JC} − θ_{CS}',
+          num: `\\frac{${C(v.tj)} − ${C(v.ta)}}{${W(r.powerW)}} − ${K(v.jc)} − ${K(cs)}`, res: K(r.requiredThetaSA) },
+      ], { note: 'th_note', where: [['T_a', 'th_Ta', 'ta'], ['T_{j,max}', 'th_TjMax', 'tj'], r.eff === null && ['P', 'th_P', 'P'],
+        !r.chain && ['θ_{JA}', 'th_thetaJA', 'ja'], r.chain && ['θ_{JC}', 'th_thetaJC', 'jc'], r.chain && ['θ_{CS}', 'th_thetaCS', 'cs'], r.chain && ['θ_{SA}', 'th_thetaSA', 'sa']], refs: ['JEDEC JESD51', 'TI SPRA953 “Semiconductor and IC package thermal metrics”'] })
       + block('results', rows([
         ['th_thetaTotal', `${fmt(r.thetaTotal, 4)} °C/W`],
         ['th_margin', `${fixed(r.margin, 1)} °C`],
@@ -208,12 +224,6 @@ export default {
         ['th_maxTa', `${fixed(r.maxAmbient, 1)} °C`],
         r.chain && ['th_reqSA', r.requiredThetaSA > 0 ? `${fmt(r.requiredThetaSA, 3)} °C/W` : esc(t('th_reqSAnone'))],
         r.eff !== null && ['th_eff', `${fixed(r.eff * 100, 1)} %`],
-      ]))
-      + formulaBlock([
-        'P_LDO = (Vin − Vout)·Iout + Vin·Iq',
-        'Tj = Ta + P·θJA          or   Tj = Ta + P·(θJC + θCS + θSA)',
-        'P_max = (Tj,max − Ta) / Σθ',
-        'θSA,req = (Tj,max − Ta)/P − θJC − θCS',
-      ], 'th_note', ['JEDEC JESD51', 'TI SPRA953 “Semiconductor and IC package thermal metrics”']);
+      ]));
   },
 };

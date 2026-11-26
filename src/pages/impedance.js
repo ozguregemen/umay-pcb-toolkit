@@ -1,6 +1,7 @@
-import { calculateImpedance, solveWidth, isDiff, isStripType } from '../engine/impedance.js';
+import { calculateImpedance, solveWidth, impedanceTolerance, isDiff, isStripType } from '../engine/impedance.js';
 import { toMm, fromMm, thicknessToMil, MM_PER_MIL } from '../engine/units.js';
-import { hero, rows, block, formulaBlock, messages, invalid, checks } from '../ui/calculator.js';
+import { hero, rows, block, steps, messages, invalid, checks } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -25,6 +26,40 @@ const strings = {
     im_dWire: 'Tel çapı (d)',
     im_spacing2: 'Teller arası merkez mesafesi (s)',
     im_tol: 'Empedans toleransı',
+    im_tolSection: 'Üretim toleransları',
+    im_kw: 'İz genişliği toleransı (aşındırma)',
+    im_kwInfo: 'Aşındırma, izin iki kenarını birlikte oynatır. Diferansiyel çiftte ve CPWG’de iz daraldıkça aralık aynı miktarda açılır; analiz bunu hesaba katar. Tipik değer ±%10’dur (ince izlerde yaklaşık ±0,025 mm).',
+    im_kh: 'Dielektrik kalınlığı toleransı',
+    im_khInfo: 'Prepreg, preslemede reçine akışına ve çevresindeki bakır yoğunluğuna göre incelir; ±%10 tipik bir değerdir. Çekirdek (core) kalınlığı daha dar toleranslıdır.',
+    im_ke: 'εr toleransı',
+    im_keInfo: 'εr, reçine oranına ve frekansa göre değişir. Üreticinin katman yığını tablosundaki değeri kullanın; ±%5 tipik bir belirsizliktir.',
+    im_kt: 'Bakır kalınlığı toleransı',
+    im_ktInfo: 'Dış katmanlarda kaplama kalınlığı kart üzerinde değişir; ±%10–20 görülür.',
+    im_tolTitle: 'Tolerans analizi',
+    im_tolParam: 'Parametre',
+    im_tolEffect: 'Z üzerindeki etkisi',
+    im_tolShare: 'Yayılımdaki payı',
+    im_tw: 'İz genişliği',
+    im_th: 'Dielektrik kalınlığı',
+    im_th2: 'Dielektrik kalınlığı (h2)',
+    im_te: 'Dielektrik sabiti εr',
+    im_tt: 'Bakır kalınlığı',
+    im_tolRss: 'Beklenen yayılım (RSS)',
+    im_tolWc: 'En kötü durum',
+    im_tolDominant: 'En büyük katkı',
+    im_tolChkRss: 'Beklenen yayılım {z} Ω ± %{tol} içinde',
+    im_tolChkWc: 'En kötü durum {z} Ω ± %{tol} içinde',
+    im_tolNote: 'Her parametre tek başına sınırlarına götürülür (duyarlılık). En kötü durum, tüm sınır birleşimlerinin uç değeridir; RSS ise katkıları bağımsız hatalar gibi birleştirir ve üretimde görülen yayılıma daha yakındır. Paylar hangi parametreyi sıkılaştırmanın en çok işe yarayacağını gösterir. Değerler kapalı form modelden gelir; üretici genişliği kendi alan çözücüsüyle ayarlar ve test kuponuyla doğrular.',
+    im_solved: 'Genişlik, Z(w) hedefe eşit olacak şekilde sayısal olarak (ikiye bölme yöntemiyle) bulunur. Aşağıdaki adımlar hesabı bu genişlikle gösterir.',
+    im_stepU: 'Genişlik / yükseklik oranı (kalınlık düzeltmeli)',
+    im_stepEe: 'Empedans hesabındaki etkin dielektrik sabiti εe',
+    im_stepZ01: 'Aynı hattın havadaki empedansı',
+    im_stepMs: 'Örtüsüz microstrip (Hammerstad–Jensen)',
+    im_stepWeff: 'Etkin genişlik (kalınlık düzeltmeli)',
+    im_stepM: 'Geometri oranı',
+    im_stepZs: 'Tek düzlem aralığı için simetrik stripline (Wheeler)',
+    im_stepK: 'Eliptik integral modülü',
+    im_stepQ: 'Eliptik integral oranı',
     im_tolInfo: 'Üretici genellikle kontrollü empedansı ±%10 ile garanti eder (sıkı süreçte ±%5–7). Hedef girildiğinde sonuç bu aralıkta mı diye kontrol edilir; sentez modunda bu aralığı veren genişlik penceresi gösterilir.',
     im_rough: 'Bakır yüzey pürüzlülüğü (Rq)',
     im_roughInfo: 'RMS pürüzlülük. Yaklaşık değerler: çok düşük profilli (HVLP) folyo < 0,5 µm, standart elektrodepozit folyo 1–2 µm. Pürüzlülük, deri kalınlığı onunla karşılaştırılabilir olduğunda iletken kaybını en fazla 2 katına çıkarır (Hammerstad modeli).',
@@ -103,6 +138,40 @@ const strings = {
     im_dWire: 'Wire diameter (d)',
     im_spacing2: 'Centre-to-centre wire spacing (s)',
     im_tol: 'Impedance tolerance',
+    im_tolSection: 'Manufacturing tolerances',
+    im_kw: 'Trace width tolerance (etching)',
+    im_kwInfo: 'Etching moves both edges of a trace together. In a differential pair and in CPWG the gap opens by the amount the trace narrows; the analysis accounts for that. A typical value is ±10 % (about ±0.025 mm on fine traces).',
+    im_kh: 'Dielectric thickness tolerance',
+    im_khInfo: 'Prepreg thins with resin flow and with the copper density around it during lamination; ±10 % is typical. Core thickness is held tighter.',
+    im_ke: 'εr tolerance',
+    im_keInfo: 'εr depends on resin content and frequency. Use the value from the fabricator’s stack-up table; ±5 % is a typical uncertainty.',
+    im_kt: 'Copper thickness tolerance',
+    im_ktInfo: 'On outer layers the plating thickness varies across the board; ±10–20 % is seen.',
+    im_tolTitle: 'Tolerance analysis',
+    im_tolParam: 'Parameter',
+    im_tolEffect: 'Effect on Z',
+    im_tolShare: 'Share of the spread',
+    im_tw: 'Trace width',
+    im_th: 'Dielectric thickness',
+    im_th2: 'Dielectric thickness (h2)',
+    im_te: 'Dielectric constant εr',
+    im_tt: 'Copper thickness',
+    im_tolRss: 'Expected spread (RSS)',
+    im_tolWc: 'Worst case',
+    im_tolDominant: 'Largest contributor',
+    im_tolChkRss: 'Expected spread within {z} Ω ± {tol} %',
+    im_tolChkWc: 'Worst case within {z} Ω ± {tol} %',
+    im_tolNote: 'Each parameter is moved alone to its limits (sensitivity). The worst case is the extreme over all combinations of limits; RSS combines the contributions as independent errors and is closer to the spread seen in production. The shares show which parameter is most worth tightening. Values come from the closed-form model; the fabricator adjusts the width with its own field solver and verifies it on a test coupon.',
+    im_solved: 'The width is found numerically (by bisection) so that Z(w) equals the target. The steps below show the calculation with that width.',
+    im_stepU: 'Width-to-height ratio (thickness-corrected)',
+    im_stepEe: 'Effective dielectric constant used for the impedance, εe',
+    im_stepZ01: 'Impedance of the same line in air',
+    im_stepMs: 'Microstrip without cover (Hammerstad–Jensen)',
+    im_stepWeff: 'Effective width (thickness-corrected)',
+    im_stepM: 'Geometry ratio',
+    im_stepZs: 'Symmetric stripline for one plane spacing (Wheeler)',
+    im_stepK: 'Elliptic-integral modulus',
+    im_stepQ: 'Ratio of elliptic integrals',
     im_tolInfo: 'Fabricators usually guarantee controlled impedance to ±10 % (±5–7 % on tight processes). With a target, the result is checked against this window; in synthesis mode the width window that achieves it is shown.',
     im_rough: 'Copper surface roughness (Rq)',
     im_roughInfo: 'RMS roughness. Approximate values: hyper-very-low-profile (HVLP) foil < 0.5 µm, standard electrodeposited foil 1–2 µm. Roughness raises conductor loss by up to 2× once the skin depth becomes comparable (Hammerstad model).',
@@ -189,27 +258,138 @@ const TARGETS = [
   { label: 'DDR4/DDR5 40 Ω', value: 40 }, { label: 'CAN / RS-485 120 Ω', value: 120 },
 ];
 
-const FORMULAS = {
-  microstrip: ['u = w/h,  Z01(u) = η0/2π · ln( f(u)/u + √(1 + (2/u)²) )',
-    'εe(u) = (εr+1)/2 + (εr−1)/2 · (1 + 10/u)^(−a·b)',
-    'Z0 = Z01(ur) / √εe(ur)        (Hammerstad–Jensen, t → Δu)'],
-  stripline: ['Z0 = 30/√εr · ln{ 1 + (4/π)(b−t)/W′ · [ (8/π)(b−t)/W′ + √(((8/π)(b−t)/W′)² + 6.27) ] }',
-    'W′ = w + ΔW(t, b)              (Wheeler 1978)'],
-  asymStripline: ['Z0 ≈ 2·Zs(2h1+t)·Zs(2h2+t) / (Zs(2h1+t) + Zs(2h2+t))', 'Zs = Wheeler symmetric stripline'],
-  embedded: ['εeff(c) = εr − (εr − εeff,ms)·e^(−1.55·c/h)    (IPC-2141 decay, anchored at c = 0)', 'Z0 = Z0,ms · √(εeff,ms / εeff(c))'],
-  cpwg: ['k = w/(w+2s),  k1 = tanh(πw/4h) / tanh(π(w+2s)/4h)',
-    'εeff = (1 + εr·K(k′)K(k1)/(K(k)K(k1′))) / (1 + K(k′)K(k1)/(K(k)K(k1′)))',
-    'Z0 = 60π/√εeff · 1 / ( K(k)/K(k′) + K(k1)/K(k1′) )'],
-  diffMicrostrip: ['Z0 : Hammerstad–Jensen microstrip', 'Zdiff = 2·Z0·(1 − 0.48·e^(−0.96·s/h))'],
-  diffStripline: ['Z0 : Wheeler stripline', 'Zdiff = 2·Z0·(1 − 0.374·e^(−2.9·s/b))'],
-  coax: ['Z0 = 60/√εr · ln(D/d)'],
-  twowire: ['Z0 = 120/√εr · acosh(s/d)'],
-};
-const COMMON = [
-  't_pd = √εeff / c,   L′ = Z0·√εeff / c,   C′ = √εeff / (c·Z0)',
-  'α_d = k0·εr(εeff−1)·tanδ / (2√εeff(εr−1))  [Np/m]',
-  'α_c = R′/(2·Z0),  Rs = √(π f µ0 ρ),  K_rough = 1 + (2/π)·atan(1.4·(Δ/δ)²)',
-];
+
+const REFS = ['Hammerstad & Jensen, IEEE MTT-S 1980', 'Wheeler, IEEE T-MTT 1978', 'Wadell, Transmission Line Design Handbook', 'IPC-2141A', 'J. Mears, National AN-905 (1996)'];
+
+/**
+ * Calculation steps for the structure in use, with the intermediate values the
+ * engine returns (r.detail). Geometry is r.p in mm; ratios make the unit drop out.
+ */
+function worked(r, v) {
+  const p = r.p;
+  const d = r.detail ?? {};
+  const st = r.structure;
+  const L = (x) => tx(lenMain(x));
+  const n = (x, sig = 4) => fmt(x, sig);
+  const Z = (x) => tx(`${fixed(x, 2)} Ω`);
+  const er = n(p.er);
+  const list = [];
+
+  if (v.mode === 'synth') list.push({ label: 'im_width', sym: 'w', res: L(r.w), note: 'im_solved' });
+
+  const hj = (u, ab, ee, z01) => [
+    { label: 'im_stepEe', sym: 'ε_e = \\frac{ε_r + 1}{2} + \\frac{ε_r − 1}{2} \\cdot (1 + \\frac{10}{u})^{−a b}',
+      num: `\\frac{${er} + 1}{2} + \\frac{${er} − 1}{2} \\cdot (1 + \\frac{10}{${n(u)}})^{−${n(ab)}}`, res: n(ee) },
+    { label: 'im_stepZ01', sym: `Z_{01} = \\frac{η_0}{2π} \\ln(\\frac{F}{u} + \\sqrt{1 + \\frac{4}{u^{2}}}), \\quad F = 6 + (2π − 6) \\cdot e^{−(${n(30.666, 5)} / u)^{${n(0.7528)}}}`, res: Z(z01) },
+  ];
+
+  if (st === 'microstrip' || st === 'diffMicrostrip') {
+    list.push(
+      { label: 'im_stepU', sym: 'u = \\frac{w}{h} + Δu_t', num: `\\frac{${L(p.w)}}{${L(p.h)}} + ${n(d.ur - d.u, 3)}`, res: n(d.ur) },
+      ...hj(d.ur, d.ab, d.ee, d.z01),
+      { label: 'im_z0', sym: 'Z_0 = \\frac{Z_{01}}{\\sqrt{ε_e}}', num: `\\frac{${Z(d.z01)}}{\\sqrt{${n(d.ee)}}}`, res: Z(r.z0) },
+      { label: 'im_erEff', sym: 'ε_{eff} = ε_e \\cdot (\\frac{Z_{01}(u_1)}{Z_{01}(u)})^{2}', res: n(r.erEff) },
+    );
+  } else if (st === 'embedded') {
+    list.push(
+      { label: 'im_stepMs', sym: 'Z_{0,ms}', res: `${Z(d.z0ms)}, \\quad ε_{eff,ms} = ${n(d.eeMs)}` },
+      { label: 'im_erEff', sym: `ε_{eff} = ε_r − (ε_r − ε_{eff,ms}) \\cdot e^{−${n(1.55)} c / h}`,
+        num: `${er} − (${er} − ${n(d.eeMs)}) \\cdot e^{−${n(1.55)} \\cdot \\frac{${L(p.c)}}{${L(p.h)}}}`, res: n(r.erEff) },
+      { label: 'im_z0', sym: 'Z_0 = Z_{0,ms} \\cdot \\sqrt{\\frac{ε_{eff,ms}}{ε_{eff}}}', num: `${Z(d.z0ms)} \\cdot \\sqrt{\\frac{${n(d.eeMs)}}{${n(r.erEff)}}}`, res: Z(r.z0) },
+    );
+  } else if (st === 'stripline' || st === 'diffStripline') {
+    list.push(
+      { label: 'im_stepWeff', sym: 'W′ = w + ΔW_t', num: `${L(p.w)} + ${L(d.wEff - p.w)}`, res: L(d.wEff) },
+      { label: 'im_stepM', sym: 'm = \\frac{b − t}{W′}', num: `\\frac{${L(p.h)} − ${L(p.t)}}{${L(d.wEff)}}`, res: n(d.m) },
+      { label: 'im_z0', sym: `Z_0 = \\frac{30}{\\sqrt{ε_r}} \\ln(1 + \\frac{4 m}{π} (\\frac{8 m}{π} + \\sqrt{(\\frac{8 m}{π})^{2} + ${n(6.27)}}))`,
+        num: `\\frac{30}{\\sqrt{${er}}} \\ln(1 + \\frac{4 \\cdot ${n(d.m)}}{π} (\\frac{8 \\cdot ${n(d.m)}}{π} + \\sqrt{(\\frac{8 \\cdot ${n(d.m)}}{π})^{2} + ${n(6.27)}}))`, res: Z(r.z0) },
+    );
+  } else if (st === 'asymStripline') {
+    list.push(
+      { label: 'im_stepZs', sym: 'Z_1 = Z_s(b = 2 h_1 + t)', res: Z(d.z1) },
+      { label: 'im_stepZs', sym: 'Z_2 = Z_s(b = 2 h_2 + t)', res: Z(d.z2) },
+      { label: 'im_z0', sym: 'Z_0 = \\frac{2 Z_1 Z_2}{Z_1 + Z_2}', num: `\\frac{2 \\cdot ${Z(d.z1)} \\cdot ${Z(d.z2)}}{${Z(d.z1)} + ${Z(d.z2)}}`, res: Z(r.z0) },
+    );
+  } else if (st === 'cpwg') {
+    list.push(
+      { label: 'im_stepK', sym: 'k = \\frac{w}{w + 2 s}', num: `\\frac{${L(p.w)}}{${L(p.w)} + 2 \\cdot ${L(p.s)}}`, res: n(d.k) },
+      { label: 'im_stepK', sym: 'k_1 = \\frac{\\tanh(π w / 4 h)}{\\tanh(π (w + 2 s) / 4 h)}', res: n(d.k1) },
+      { label: 'im_stepQ', sym: 'q = \\frac{K(k_1) / K(k_1′)}{K(k) / K(k′)}', num: `\\frac{${n(d.r1)}}{${n(d.r)}}`, res: n(d.q) },
+      { label: 'im_erEff', sym: 'ε_{eff} = \\frac{1 + ε_r q}{1 + q}', num: `\\frac{1 + ${er} \\cdot ${n(d.q)}}{1 + ${n(d.q)}}`, res: n(r.erEff) },
+      { label: 'im_z0', sym: 'Z_0 = \\frac{60π}{\\sqrt{ε_{eff}}} \\cdot \\frac{1}{\\frac{K(k)}{K(k′)} + \\frac{K(k_1)}{K(k_1′)}}',
+        num: `\\frac{60π}{\\sqrt{${n(r.erEff)}}} \\cdot \\frac{1}{${n(d.r)} + ${n(d.r1)}}`, res: Z(r.z0) },
+    );
+  } else if (st === 'coax') {
+    list.push({ label: 'im_z0', sym: 'Z_0 = \\frac{60}{\\sqrt{ε_r}} \\ln\\frac{D}{d}', num: `\\frac{60}{\\sqrt{${er}}} \\ln\\frac{${L(p.h)}}{${L(p.w)}}`, res: Z(r.z0) });
+  } else if (st === 'twowire') {
+    list.push({ label: 'im_z0', sym: 'Z_0 = \\frac{120}{\\sqrt{ε_r}} \\cosh^{−1}\\frac{s}{d}', num: `\\frac{120}{\\sqrt{${er}}} \\cosh^{−1}\\frac{${L(p.h)}}{${L(p.w)}}`, res: Z(r.z0) });
+  }
+
+  if (st === 'diffMicrostrip' || st === 'diffStripline') {
+    const [a, b, hSym] = st === 'diffMicrostrip' ? [0.48, 0.96, 'h'] : [0.374, 2.9, 'b'];
+    list.push({ label: 'im_zdiff', sym: `Z_{diff} = 2 Z_0 (1 − ${n(a)} \\cdot e^{−${n(b)} s / ${hSym}})`,
+      num: `2 \\cdot ${Z(r.z0)} \\cdot (1 − ${n(a)} \\cdot e^{−${n(b)} \\cdot \\frac{${L(p.s)}}{${L(p.h)}}})`, res: Z(r.zdiff) });
+  }
+
+  list.push({ label: 'im_delay', sym: 't_{pd} = \\frac{\\sqrt{ε_{eff}}}{c}', num: `\\frac{\\sqrt{${n(r.erEff)}}}{${tx(`${fmt(299.792458, 4)} mm/ns`)}}`, res: tx(`${fmt(r.delayPsPerMm, 4)} ps/mm`) });
+
+  if (r.ipc) {
+    list.push(st === 'microstrip' || st === 'diffMicrostrip'
+      ? { label: 'im_ipc', sym: `Z_0 ≈ \\frac{87}{\\sqrt{ε_r + ${n(1.41)}}} \\ln\\frac{${n(5.98)} h}{${n(0.8)} w + t}`,
+        num: `\\frac{87}{\\sqrt{${er} + ${n(1.41)}}} \\ln\\frac{${n(5.98)} \\cdot ${L(p.h)}}{${n(0.8)} \\cdot ${L(p.w)} + ${L(p.t)}}`, res: Z(r.ipc) }
+      : { label: 'im_ipc', sym: `Z_0 ≈ \\frac{60}{\\sqrt{ε_r}} \\ln\\frac{4 b}{${n(0.67)} π (${n(0.8)} w + t)}`,
+        num: `\\frac{60}{\\sqrt{${er}}} \\ln\\frac{4 \\cdot ${L(p.h)}}{${n(0.67)} π (${n(0.8)} \\cdot ${L(p.w)} + ${L(p.t)})}`, res: Z(r.ipc) });
+  }
+
+  if (r.loss) {
+    const db = (x) => tx(`${fmt(x * 1000, 3)} dB/m`);
+    list.push(
+      { label: 'im_lossD', sym: isStripType(st) || Math.abs(r.erEff - p.er) < 1e-9
+        ? 'α_d = \\frac{k_0 \\sqrt{ε_r} \\tan δ}{2}, \\quad k_0 = \\frac{2π f}{c}'
+        : 'α_d = \\frac{k_0 ε_r (ε_{eff} − 1) \\tan δ}{2 \\sqrt{ε_{eff}} (ε_r − 1)}, \\quad k_0 = \\frac{2π f}{c}', res: db(r.loss.dielectricDbPerMm) },
+      { label: 'im_lossC', sym: 'α_c = \\frac{R′ \\cdot K_{rough}}{2 Z_0}, \\quad R_s = \\sqrt{π f µ_0 ρ}', res: db(r.loss.conductorDbPerMm) },
+    );
+  }
+  return steps(list, { note: 'im_note', refs: REFS });
+}
+
+const TOL_NAME = { w: 'im_tw', h: 'im_th', h2: 'im_th2', er: 'im_te', t: 'im_tt' };
+
+/** Tolerance analysis: contribution of each parameter, worst case and RSS, checked against the target window. */
+function tolBlock(r, v) {
+  const a = r.tolAn;
+  if (!a || !a.items.length) return '';
+  const signed = (x) => `${x > 0.05 ? '+' : x < -0.05 ? '−' : '±'}${fixed(Math.abs(x), 1)} %`;
+  const ohm = (x) => `${fixed(x, 1)} Ω`;
+  const table = `<table class="grid tol-table"><thead><tr>
+      <th scope="col">${esc(t('im_tolParam'))}</th><th scope="col">${esc(t('im_tolEffect'))}</th><th scope="col" colspan="2">${esc(t('im_tolShare'))}</th>
+    </tr></thead><tbody>${a.items.map((x) => `<tr>
+      <th scope="row">${esc(t(TOL_NAME[x.key]))} <small>±${fmt(x.tolPct, 3)} %</small></th>
+      <td>${signed(x.minusPct)} / ${signed(x.plusPct)}</td>
+      <td class="tol-bar"><span style="width:${(x.share * 100).toFixed(1)}%"></span></td>
+      <td>${fixed(x.share * 100, 0)} %</td>
+    </tr>`).join('')}</tbody></table>`;
+  const rssLo = a.nominal * (1 - a.rssPct / 100);
+  const rssHi = a.nominal * (1 + a.rssPct / 100);
+  const summary = rows([
+    ['im_tolRss', `${ohm(rssLo)} … ${ohm(rssHi)} (±${fixed(a.rssPct, 1)} %)`, true],
+    ['im_tolWc', `${ohm(a.zMin)} … ${ohm(a.zMax)} (${signed(a.wcMinusPct)} / ${signed(a.wcPlusPct)})`],
+    ['im_tolDominant', esc(t(TOL_NAME[a.dominant]))],
+  ]);
+  // Window to hold: the target ± tolerance when a target is given, else the nominal value ± tolerance.
+  const tol = (v.tol || 0) / 100;
+  let verdict = '';
+  if (tol > 0) {
+    const centre = r.check ? r.check.target : a.nominal;
+    const inside = (lo, hi) => lo >= centre * (1 - tol) - 1e-9 && hi <= centre * (1 + tol) + 1e-9;
+    const vars = { z: fmt(centre, 4), tol: fmt(tol * 100, 3) };
+    verdict = checks([
+      [inside(rssLo, rssHi), esc(t('im_tolChkRss', vars)), `${ohm(rssLo)} … ${ohm(rssHi)}`],
+      [inside(a.zMin, a.zMax), esc(t('im_tolChkWc', vars)), `${ohm(a.zMin)} … ${ohm(a.zMax)}`],
+    ]);
+  }
+  return block('im_tolTitle', table + summary + verdict + `<p class="note">${esc(t('im_tolNote'))}</p>`);
+}
 
 function roundDiagram(st) {
   if (st === 'coax') {
@@ -324,6 +504,17 @@ export default {
         { key: 'len', type: 'number', label: 'im_len', default: '', optional: true, units: ['mm', 'cm', 'in', 'mil'] },
       ],
     },
+    {
+      title: 'im_tolSection',
+      collapsible: true,
+      optional: true,
+      fields: [
+        { key: 'kw', type: 'number', label: 'im_kw', default: 10, units: ['pct'], valid: 'nonneg', max: 50, optional: true, info: 'im_kwInfo' },
+        { key: 'kh', type: 'number', label: 'im_kh', default: 10, units: ['pct'], valid: 'nonneg', max: 50, optional: true, info: 'im_khInfo' },
+        { key: 'ke', type: 'number', label: 'im_ke', default: 5, units: ['pct'], valid: 'nonneg', max: 50, optional: true, info: 'im_keInfo' },
+        { key: 'kt', type: 'number', label: 'im_kt', default: 10, units: ['pct'], valid: 'nonneg', max: 50, optional: true, info: 'im_ktInfo', show: (v) => !isRound(v) },
+      ],
+    },
   ],
 
   diagram: (v) => diagram(v),
@@ -350,6 +541,10 @@ export default {
         r.wMax = solveWidth(p, target * (1 - tol));
       }
     }
+    // Geometry in mm with the final width: used by the calculation steps and
+    // by the tolerance analysis.
+    r.p = { ...p, w: r.w };
+    r.tolAn = impedanceTolerance(r.p, { w: v.kw, h: v.kh, er: v.ke, t: isRound(v) ? 0 : v.kt });
     return r;
   },
 
@@ -393,9 +588,7 @@ export default {
         r.loss.kRough > 1 && ['im_kRough', `×${fixed(r.loss.kRough, 3)}`],
       ]));
     }
-    return main + chk + messages('warn', r.warnings) + block('results', details) + loss
-      + `<p class="note"><a href="#/interfaces">${esc(t('im_ifLink'))}</a></p>`
-      + formulaBlock([...FORMULAS[r.structure], ...COMMON], 'im_note', [
-        'Hammerstad & Jensen, IEEE MTT-S 1980', 'Wheeler, IEEE T-MTT 1978', 'Wadell, Transmission Line Design Handbook', 'IPC-2141A', 'J. Mears, National AN-905 (1996)']);
+    return main + chk + messages('warn', r.warnings) + worked(r, v) + block('results', details) + tolBlock(r, v) + loss
+      + `<p class="note"><a href="#/interfaces">${esc(t('im_ifLink'))}</a></p>`;
   },
 };

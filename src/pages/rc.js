@@ -1,5 +1,6 @@
 import { rcCircuit, rlCircuit, lcCircuit, reactance } from '../engine/circuit.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, terminal, arrow, dimH, text, axes, wave, path, circle } from '../ui/svg.js';
 import { t, getLang } from '../i18n.js';
@@ -99,6 +100,8 @@ const strings = {
 
 const REFS = ['Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 1'];
 const isMode = (m) => (v) => v.mode === m;
+// A value with its unit, as it appears inside the calculation steps.
+const q = (x, unit) => tx(si(x, unit));
 const siField = (key, label, def, unit, show, extra = {}) => ({ key, type: 'number', label, default: def, units: [unit], si: true, show, ...extra });
 
 function stepRows(r) {
@@ -112,11 +115,10 @@ function stepRows(r) {
   ]));
 }
 
-const STEP_LINES = [
-  'v(t) = V · (1 − e^(−t/τ))',
-  't_x  = −τ · ln(1 − x):  50 % → 0.693τ,  63.2 % → τ,  90 % → 2.303τ,  99 % → 4.605τ',
-  't_r(10–90 %) = τ · ln 9 ≈ 2.197τ',
-];
+// From v(t) = V · (1 − e^(−t/τ)): the time to reach a fraction x is −τ · ln(1 − x).
+const riseStep = (r) => ({
+  label: 'rc_rise', sym: 't_r = t_{90\\,\\%} − t_{10\\,\\%} = τ \\cdot \\ln 9', num: `${q(r.tau, 's')} \\cdot ${tx(fmt(Math.log(9), 4))}`, res: q(r.rise, 's'),
+});
 
 // ---------------------------------------------------------------------------
 // Live diagrams
@@ -352,7 +354,7 @@ export default {
     }
   },
 
-  render(r) {
+  render(r, v) {
     if (!r.ok) return invalid(r.errors);
 
     if (r.mode === 'lc') {
@@ -368,16 +370,17 @@ export default {
         ['rc_z0', siHtml(r.z0, 'Ω')],
       ])
         + messages('warn', r.warnings)
+        + steps([
+          { label: 'rc_f0', sym: 'f_0 = \\frac{1}{2π \\sqrt{L \\cdot C}}', num: `\\frac{1}{2π \\sqrt{${q(v.lcL, 'H')} \\cdot ${q(v.lcC, 'F')}}}`, res: q(r.f0, 'Hz') },
+          { label: 'rc_z0', sym: 'Z_0 = \\sqrt{\\frac{L}{C}}', num: `\\sqrt{\\frac{${q(v.lcL, 'H')}}{${q(v.lcC, 'F')}}}`, res: q(r.z0, 'Ω') },
+          Number.isFinite(r.q) && { label: 'rc_q', sym: 'Q = \\frac{1}{R} \\sqrt{\\frac{L}{C}} = \\frac{Z_0}{R}', num: `\\frac{${q(r.z0, 'Ω')}}{${q(v.lcR, 'Ω')}}`, res: tx(fmt(r.q, 4)) },
+          Number.isFinite(r.q) && { label: 'rc_bw', sym: 'BW = \\frac{f_0}{Q}', num: `\\frac{${q(r.f0, 'Hz')}}{${tx(fmt(r.q, 4))}}`, res: q(r.bw, 'Hz') },
+        ], { note: 'rc_noteLc', refs: REFS })
         + block('rc_details', rows([
           ['rc_omega', si(r.omega, 'rad/s')],
           ['rc_period', si(r.period, 's')],
         ]))
-        + loss
-        + formulaBlock([
-          'f0 = 1 / (2π · √(L · C)),   ω0 = 2π · f0',
-          'Z0 = √(L / C)',
-          'Q  = (1 / R) · √(L / C),   BW = f0 / Q,   ζ = 1 / (2Q)',
-        ], 'rc_noteLc', REFS);
+        + loss;
     }
 
     if (r.mode === 'x') {
@@ -386,16 +389,16 @@ export default {
         Number.isFinite(r.xl) && ['rc_xl', siHtml(r.xl, 'Ω')],
         Number.isFinite(r.xc) && ['rc_xc', siHtml(r.xc, 'Ω')],
       ])
+        + steps([
+          Number.isFinite(r.xl) && { label: 'rc_xl', sym: 'X_L = 2π \\cdot f \\cdot L', num: `2π \\cdot ${q(v.xF, 'Hz')} \\cdot ${q(v.xL, 'H')}`, res: q(r.xl, 'Ω') },
+          Number.isFinite(r.xc) && { label: 'rc_xc', sym: 'X_C = \\frac{1}{2π \\cdot f \\cdot C}', num: `\\frac{1}{2π \\cdot ${q(v.xF, 'Hz')} \\cdot ${q(v.xC, 'F')}}`, res: q(r.xc, 'Ω') },
+          Number.isFinite(r.xSeries) && { label: 'rc_xs', sym: 'X = X_L − X_C', num: `${q(r.xl, 'Ω')} − ${q(r.xc, 'Ω')}`, res: q(r.xSeries, 'Ω') },
+        ], { note: 'rc_noteX', refs: REFS })
         + block('rc_details', rows([
           ['rc_omega', si(r.omega, 'rad/s')],
           Number.isFinite(r.xSeries) && ['rc_xs', `${si(r.xSeries, 'Ω')} · ${esc(t(kind))}`],
           Number.isFinite(r.f0) && ['rc_f0lc', si(r.f0, 'Hz')],
-        ]))
-        + formulaBlock([
-          'XL = 2π · f · L',
-          'XC = 1 / (2π · f · C)',
-          'X  = XL − XC   (series L–C;  X > 0 inductive, X < 0 capacitive)',
-        ], 'rc_noteX', REFS);
+        ]));
     }
 
     const rl = r.mode === 'rl';
@@ -403,11 +406,15 @@ export default {
       ['rc_tau', siHtml(r.tau, 's')],
       ['rc_fc', siHtml(r.fc, 'Hz')],
     ])
-      + stepRows(r)
-      + formulaBlock([
-        rl ? 'τ  = L / R' : 'τ  = R · C',
-        rl ? 'fc = R / (2π · L)' : 'fc = 1 / (2π · R · C)',
-        ...STEP_LINES,
-      ], 'rc_noteRc', REFS);
+      + steps(rl ? [
+        { label: 'rc_tau', sym: 'τ = \\frac{L}{R}', num: `\\frac{${q(v.rlL, 'H')}}{${q(v.rlR, 'Ω')}}`, res: q(r.tau, 's') },
+        { label: 'rc_fc', sym: 'f_c = \\frac{R}{2π \\cdot L}', num: `\\frac{${q(v.rlR, 'Ω')}}{2π \\cdot ${q(v.rlL, 'H')}}`, res: q(r.fc, 'Hz') },
+        riseStep(r),
+      ] : [
+        { label: 'rc_tau', sym: 'τ = R \\cdot C', num: `${q(v.rcR, 'Ω')} \\cdot ${q(v.rcC, 'F')}`, res: q(r.tau, 's') },
+        { label: 'rc_fc', sym: 'f_c = \\frac{1}{2π \\cdot R \\cdot C}', num: `\\frac{1}{2π \\cdot ${q(v.rcR, 'Ω')} \\cdot ${q(v.rcC, 'F')}}`, res: q(r.fc, 'Hz') },
+        riseStep(r),
+      ], { note: 'rc_noteRc', refs: REFS })
+      + stepRows(r);
   },
 };

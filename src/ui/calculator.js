@@ -3,10 +3,11 @@
 
 import { t } from '../i18n.js';
 import { esc, unitLabel, fmt } from './format.js';
-import { isImperial } from '../prefs.js';
+import { isImperial, getPref } from '../prefs.js';
 import { fromMm } from '../engine/units.js';
 import { icon } from './icons.js';
 import { addZoomButtons } from './zoom.js';
+import { tex, texPlain } from './math.js';
 
 /*
  Field definitions
@@ -278,6 +279,8 @@ function summaryText(page, root) {
   });
   const warns = [...result.querySelectorAll('.msg li')].map((li) => `  ! ${li.textContent.trim()}`);
   if (warns.length) lines.push('', `${t('warnings')}:`, ...warns);
+  const worked = [...result.querySelectorAll('.steps li[data-plain]')].map((li) => `  ${li.dataset.plain}`);
+  if (worked.length) lines.push('', `${t('steps')}:`, ...worked);
   return lines.join('\n');
 }
 
@@ -489,6 +492,15 @@ export function mountCalculator(root, page, params) {
   });
   form.addEventListener('submit', (e) => e.preventDefault());
 
+  // Pointing at a symbol in the "where" list of the calculation steps marks
+  // the input it comes from.
+  const mark = (e, on) => {
+    const key = e.target.closest?.('[data-hl]')?.dataset.hl;
+    if (key) form.querySelector(`[data-field="${key}"]`)?.classList.toggle('hl', on);
+  };
+  result.addEventListener('mouseover', (e) => mark(e, true));
+  result.addEventListener('mouseout', (e) => mark(e, false));
+
   result.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-copy]');
     if (!btn) return;
@@ -589,6 +601,47 @@ export function formulaBlock(lines, noteKey, refs) {
   const src = refs?.length ? `<p class="refs">${refs.map(esc).join(' · ')}</p>` : '';
   return `<details class="block formula-block"><summary>${esc(t('formula'))} · ${esc(t('methodology'))}</summary>
     <pre class="formula">${lines.map(esc).join('\n')}</pre>${note}${src}</details>`;
+}
+
+/**
+ * Worked calculation, shown open right under the result so the reader sees
+ * where the number comes from: each step is the formula in symbols, the same
+ * formula with the reader's values, and the result.
+ *
+ *   steps([{ label?: i18nKey, labelRaw?: text,
+ *            sym: 'V_{out} = V_{in} \\cdot \\frac{R_2}{R_1 + R_2}',
+ *            num: `${tx('3,3 V')} \\cdot \\frac{${tx('10 kΩ')}}{…}`,   // optional
+ *            res: tx('1,65 V'),                                        // optional
+ *            note?: i18nKey }, …],
+ *         { note?: i18nKey, refs?: [source, …],
+ *           where?: [[symbolTex, labelKey, fieldKey?], …] })
+ *
+ * sym / num / res use the notation of ui/math.js; wrap formatted values with
+ * tx(). `where` lists what each symbol stands for (and which input it is).
+ * Falsy steps are skipped, so conditions can be written inline.
+ */
+export function steps(items, { note, refs, where } = {}) {
+  const list = items.filter(Boolean).map((s) => {
+    const label = s.labelRaw ?? (s.label ? t(s.label) : '');
+    const parts = [s.sym, s.num, s.res];
+    let first = true;
+    const eq = parts.map((p, i) => {
+      if (!p) return '';
+      const m = tex(first ? p : `= ${p}`);
+      first = false;
+      return i === 2 ? `<span class="step-res">${m}</span>` : m;
+    }).join('');
+    const plain = parts.filter(Boolean).map(texPlain).join(' = ');
+    return `<li data-plain="${esc(label ? `${label}: ${plain}` : plain)}">${label ? `<div class="step-label">${esc(label)}</div>` : ''}
+      <div class="step-eq">${eq}</div>${s.note ? `<p class="step-note">${esc(t(s.note))}</p>` : ''}</li>`;
+  }).join('');
+  const legend = where?.length
+    ? `<dl class="step-where">${where.filter(Boolean).map(([sym, labelKey, field]) => `<div${field ? ` data-hl="${esc(field)}"` : ''}><dt>${tex(sym)}</dt><dd>${esc(t(labelKey))}</dd></div>`).join('')}</dl>`
+    : '';
+  const src = refs?.length ? `<p class="refs">${refs.map(esc).join(' · ')}</p>` : '';
+  const open = getPref('stepsOpen') !== false;
+  return `<details class="block steps"${open ? ' open' : ''}><summary>${esc(t('steps'))}</summary>
+    <ol class="step-list">${list}</ol>${legend}${note ? `<p class="note">${esc(t(note))}</p>` : ''}${src}</details>`;
 }
 
 export function invalid(errors) {

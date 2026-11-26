@@ -1,6 +1,18 @@
 import { ohmsLaw, OHM_PAIRS, powerRating } from '../engine/circuit.js';
-import { heroes, rows, block, formulaBlock } from '../ui/calculator.js';
+import { heroes, rows, block, steps } from '../ui/calculator.js';
 import { si, siHtml, fmt, esc } from '../ui/format.js';
+import { tx } from '../ui/math.js';
+
+// The two quantities each pair of known values gives: [formula, with numbers, result].
+const STEPS = {
+  VI: (q) => [['R = \\frac{V}{I}', `\\frac{${q.V}}{${q.I}}`, q.R], ['P = V \\cdot I', `${q.V} \\cdot ${q.I}`, q.P]],
+  VR: (q) => [['I = \\frac{V}{R}', `\\frac{${q.V}}{${q.R}}`, q.I], ['P = \\frac{V^{2}}{R}', `\\frac{{(${q.V})}^{2}}{${q.R}}`, q.P]],
+  IR: (q) => [['V = I \\cdot R', `${q.I} \\cdot ${q.R}`, q.V], ['P = I^{2} \\cdot R', `{(${q.I})}^{2} \\cdot ${q.R}`, q.P]],
+  PV: (q) => [['I = \\frac{P}{V}', `\\frac{${q.P}}{${q.V}}`, q.I], ['R = \\frac{V^{2}}{P}', `\\frac{{(${q.V})}^{2}}{${q.P}}`, q.R]],
+  PI: (q) => [['V = \\frac{P}{I}', `\\frac{${q.P}}{${q.I}}`, q.V], ['R = \\frac{P}{I^{2}}', `\\frac{${q.P}}{{(${q.I})}^{2}}`, q.R]],
+  PR: (q) => [['V = \\sqrt{P \\cdot R}', `\\sqrt{${q.P} \\cdot ${q.R}}`, q.V], ['I = \\sqrt{\\frac{P}{R}}', `\\sqrt{\\frac{${q.P}}{${q.R}}}`, q.I]],
+};
+const LABEL = { V: 'voltage', I: 'current', R: 'resistance', P: 'power' };
 import { svg, twoTerm, wire, arrow, text } from '../ui/svg.js';
 import { t } from '../i18n.js';
 
@@ -101,22 +113,19 @@ export default {
   },
 
   render(r, v) {
-    const sub = (q) => esc(t(v.pair.includes(q) ? 'ohm_given' : 'ohm_calc'));
+    const sub = (x) => esc(t(v.pair.includes(x) ? 'ohm_given' : 'ohm_calc'));
+    const q = { V: tx(si(r.V, 'V')), I: tx(si(r.I, 'A')), R: tx(si(r.R, 'Ω')), P: tx(si(r.P, 'W')) };
     return heroes([
       ['voltage', siHtml(r.V, 'V'), sub('V')],
       ['current', siHtml(r.I, 'A'), sub('I')],
       ['resistance', siHtml(r.R, 'Ω'), sub('R')],
       ['power', siHtml(r.P, 'W'), sub('P')],
     ])
+      + steps(STEPS[v.pair](q).map(([sym, num, res]) => ({ label: LABEL[sym[0]], sym, num, res })),
+        { note: 'ohm_note', refs: ['Ohm’s law; Joule’s law (P = V · I)', 'Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 1'] })
       + block('ohm_details', rows([
         ['ohm_conductance', si(r.G, 'S')],
         ['ohm_rating', ratingLabel(r.rating)],
-      ]))
-      + formulaBlock([
-        'V = I · R',
-        'I = V / R = P / V = √(P / R)',
-        'R = V / I = V² / P = P / I²',
-        'P = V · I = I² · R = V² / R',
-      ], 'ohm_note', ['Ohm’s law; Joule’s law (P = V · I)', 'Horowitz & Hill, The Art of Electronics, 3rd ed., ch. 1']);
+      ]));
   },
 };

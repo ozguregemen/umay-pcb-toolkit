@@ -36,10 +36,14 @@ function hjZ01(u) {
   const f = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
   return (ETA0 / (2 * Math.PI)) * Math.log(f / u + Math.sqrt(1 + (2 / u) ** 2));
 }
-function hjEeff(u, er) {
+/** Exponent a·b of the Hammerstad–Jensen εeff formula. */
+function hjExponent(u, er) {
   const a = 1 + Math.log((u ** 4 + (u / 52) ** 2) / (u ** 4 + 0.432)) / 49 + Math.log(1 + (u / 18.1) ** 3) / 18.7;
   const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
-  return (er + 1) / 2 + ((er - 1) / 2) * Math.pow(1 + 10 / u, -a * b);
+  return a * b;
+}
+function hjEeff(u, er) {
+  return (er + 1) / 2 + ((er - 1) / 2) * Math.pow(1 + 10 / u, -hjExponent(u, er));
 }
 
 /** Microstrip Z0 and εeff (w, t, h same unit). */
@@ -58,7 +62,8 @@ export function microstrip(w, t, h, er) {
   const ee = hjEeff(ur, er);
   const z0 = hjZ01(ur) / Math.sqrt(ee);
   const erEff = ee * (hjZ01(u1) / hjZ01(ur)) ** 2;
-  return { z0, erEff };
+  // d: intermediate values, for showing the calculation step by step.
+  return { z0, erEff, d: { u, ur, ab: hjExponent(ur, er), ee, z01: hjZ01(ur) } };
 }
 
 // ---------- stripline (Wheeler 1978) ----------
@@ -74,14 +79,14 @@ export function stripline(w, t, b, er) {
   const r = (b - t) / (w + dW); // (b − t)/W'
   const A = (8 / Math.PI) * r;
   const z0 = (30 / Math.sqrt(er)) * Math.log(1 + (4 / Math.PI) * r * (A + Math.sqrt(A * A + 6.27)));
-  return { z0, erEff: er };
+  return { z0, erEff: er, d: { wEff: w + dW, m: r } };
 }
 
 /** Offset stripline: h1/h2 = dielectric between trace and each plane. */
 export function asymStripline(w, t, h1, h2, er) {
   const z1 = stripline(w, t, 2 * h1 + t, er).z0;
   const z2 = stripline(w, t, 2 * h2 + t, er).z0;
-  return { z0: (2 * z1 * z2) / (z1 + z2), erEff: er };
+  return { z0: (2 * z1 * z2) / (z1 + z2), erEff: er, d: { z1, z2 } };
 }
 
 /**
@@ -94,7 +99,7 @@ export function asymStripline(w, t, h1, h2, er) {
 export function embeddedMicrostrip(w, t, h, c, er) {
   const ms = microstrip(w, t, h, er);
   const erEff = er - (er - ms.erEff) * Math.exp((-1.55 * c) / h);
-  return { z0: ms.z0 * Math.sqrt(ms.erEff / erEff), erEff };
+  return { z0: ms.z0 * Math.sqrt(ms.erEff / erEff), erEff, d: { z0ms: ms.z0, eeMs: ms.erEff } };
 }
 
 /** Grounded coplanar waveguide (zero thickness): centre w, gap s, height h. */
@@ -106,7 +111,7 @@ export function cpwg(w, s, h, er) {
   const q = r1 / r; // K(k')K(k1) / (K(k)K(k1'))
   const erEff = (1 + er * q) / (1 + q);
   const z0 = ((60 * Math.PI) / Math.sqrt(erEff)) / (r + r1);
-  return { z0, erEff };
+  return { z0, erEff, d: { k, k1, r, r1, q } };
 }
 
 // ---------- IPC-2141 comparison formulas ----------
@@ -165,6 +170,78 @@ export function solveWidth(p, target) {
 }
 
 /**
+ * Spread of the impedance caused by manufacturing tolerances.
+ *
+ * tolPct: { w, h, er, t } — each ± % of the nominal value (0 or missing = not varied).
+ *   w  etched trace width. Etching moves both edges, so the gap of a
+ *      differential pair or CPWG changes by the opposite amount (pitch is fixed).
+ *   h  dielectric thickness (for an offset stripline h and h2 vary independently).
+ *   er dielectric constant, t copper thickness.
+ *
+ * Each parameter is first moved alone to its limits (sensitivity, share of the
+ * total); the worst case is the exact extreme over all corner combinations and
+ * the RSS figure combines the one-at-a-time half-spans as independent errors.
+ *
+ * @returns {{ nominal:number, items:Array<{key:string, tolPct:number, zLo:number, zHi:number,
+ *   minusPct:number, plusPct:number, halfSpanPct:number, share:number}>, zMin:number, zMax:number,
+ *   wcMinusPct:number, wcPlusPct:number, rssPct:number, dominant:string|null } | null}
+ */
+export function impedanceTolerance(p, tolPct) {
+  const nominal = mainZ(p);
+  if (!(nominal > 0)) return null;
+  const coupled = isDiff(p.structure) || p.structure === 'cpwg';
+  // One parameter moved by the fraction f (signed) of its nominal value.
+  const moved = (q, key, f) => {
+    if (key === 'w') {
+      const dw = p.w * f;
+      return { ...q, w: p.w + dw, ...(coupled ? { s: p.s - dw } : {}) };
+    }
+    return { ...q, [key]: p[key] * (1 + f) };
+  };
+  const keys = ['w', 'h', p.structure === 'asymStripline' ? 'h2' : null, 'er', 't']
+    .filter((k) => k && (tolPct[k === 'h2' ? 'h' : k] > 0) && p[k] > 0);
+  const frac = (k) => tolPct[k === 'h2' ? 'h' : k] / 100;
+  const valid = (q) => q.w > 0 && q.h > 0 && q.er >= 1 && !(coupled && !(q.s > 0));
+
+  const items = [];
+  for (const k of keys) {
+    const lo = moved(p, k, -frac(k));
+    const hi = moved(p, k, frac(k));
+    if (!valid(lo) || !valid(hi)) return null;
+    const zLo = mainZ(lo);
+    const zHi = mainZ(hi);
+    if (!(zLo > 0) || !(zHi > 0)) return null;
+    items.push({
+      key: k, tolPct: frac(k) * 100, zLo, zHi,
+      minusPct: ((Math.min(zLo, zHi) - nominal) / nominal) * 100,
+      plusPct: ((Math.max(zLo, zHi) - nominal) / nominal) * 100,
+      halfSpanPct: (Math.abs(zHi - zLo) / 2 / nominal) * 100,
+    });
+  }
+  const sumSq = items.reduce((a, x) => a + x.halfSpanPct ** 2, 0);
+  for (const x of items) x.share = sumSq > 0 ? x.halfSpanPct ** 2 / sumSq : 0;
+
+  // Exact worst case: every combination of low/high limits.
+  let zMin = nominal;
+  let zMax = nominal;
+  for (let mask = 0; mask < 2 ** keys.length; mask++) {
+    let q = p;
+    keys.forEach((k, i) => { q = moved(q, k, (mask >> i) & 1 ? frac(k) : -frac(k)); });
+    if (!valid(q)) continue;
+    const z = mainZ(q);
+    if (z > 0) { zMin = Math.min(zMin, z); zMax = Math.max(zMax, z); }
+  }
+  const dominant = items.length ? items.reduce((a, x) => (x.halfSpanPct > a.halfSpanPct ? x : a)).key : null;
+  return {
+    nominal, items, zMin, zMax,
+    wcMinusPct: ((zMin - nominal) / nominal) * 100,
+    wcPlusPct: ((zMax - nominal) / nominal) * 100,
+    rssPct: Math.sqrt(sumSq),
+    dominant,
+  };
+}
+
+/**
  * Full calculation.
  * @param {object} p  { structure, w, t, h, h2?, c?, s?, er, tanD?, fHz?, lengthMm?, mode?, target? }
  *   lengths in mm. For stripline h = plane-to-plane spacing b; asymmetric: h, h2 = trace→plane gaps.
@@ -190,7 +267,7 @@ export function calculateImpedance(p) {
     return { ok: false, errors: ['width'] };
   }
   const q = { ...p, w };
-  const { z0, erEff } = line(q);
+  const { z0, erEff, d: detail = {} } = line(q);
   if (!(z0 > 0) || !Number.isFinite(z0)) return { ok: false, errors: ['geometry'] };
 
   let zdiff = null;
@@ -230,6 +307,7 @@ export function calculateImpedance(p) {
     zdiff,
     zodd,
     erEff,
+    detail,
     ipc,
     delayPsPerMm,
     delayPsPerIn: delayPsPerMm * 25.4,

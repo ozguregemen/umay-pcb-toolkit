@@ -78,7 +78,9 @@ Bu belge, Umay PCB Toolkit'i yaygın PCB ve elektronik hesaplayıcılarıyla kar
 
 ## Umay'ın öne çıktığı yerler
 
-- **Öğrenme yolu:** incelenen araçların hiçbirinde sıralı ders, rehberli örnek ve "kendini sına" soruları yok. Umay'da 19 ders var; her ders örnek değerlerle hesaplayıcıyı açar ve dersteki sayılar hesaplayıcıyla doğrulanmıştır.
+- **Öğrenme yolu:** incelenen araçların hiçbirinde sıralı ders, rehberli örnek ve "kendini sına" soruları yok. Umay'da 20 ders var; her ders örnek değerlerle hesaplayıcıyı açar ve dersteki sayılar hesaplayıcıyla doğrulanmıştır.
+- **Hesap adımları:** en çok kullanılan hesaplayıcılar sonucun hemen altında hesabı adım adım gösterir: simgelerle formül, aynı formül girilen sayılarla ve çıkan değer. İncelenen araçların hiçbiri sayıları formüle yerleştirip göstermez; kullanıcı sonucu elle doğrulayabilir.
+- **Tolerans ve bütçe araçları:** empedans tolerans analizi (her parametrenin payı, en kötü durum, RSS) ve güç ağacı (her regülatörün akımı, kaybı, sıcaklığı) tek formülden öte tasarım kararı verir; Saturn'de karşılığı yoktur.
 - **Şeffaflık:** IPC-2152 yöntemi ve tüm formüller açık; Saturn'ün IPC-2152 yöntemi belgelenmemiştir ve kullanıcılar sonuçları sorgulamaktadır.
 - **Doğrulama:** motor testleri ve tüm şemaların TR/EN testi her değişiklikte otomatik çalışır; değerler elle veya tam çözümlerle hesaplanmıştır.
 - **Tolerans analizi:** bileşen toleranslarının çıktıya etkisi (en kötü durum ve RSS) incelenen araçlarda yoktur.

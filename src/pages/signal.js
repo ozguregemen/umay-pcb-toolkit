@@ -1,6 +1,7 @@
 import { signalBasics } from '../engine/signal.js';
 import { toMm } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -213,7 +214,7 @@ export default {
     });
   },
 
-  render(r) {
+  render(r, v, u) {
     const main = heroes([
       ['sg_bw', siHtml(r.bwHz, 'Hz')],
       ['sg_knee', siHtml(r.kneeHz, 'Hz')],
@@ -221,7 +222,20 @@ export default {
     const regime = r.regime
       ? messages(r.regime === 'lumped' ? 'ok' : 'warn', [`sgRegime_${r.regime}`])
       : '';
+    const trS = v.tr * (u.tr === 'ps' ? 1e-12 : 1e-9);
+    const q = (x, unit) => tx(si(x, unit));
+    const speed = (x) => tx(`${fmt(x * 1e-6, 4)} mm/ns`);
+    const len = (m) => tx(`${fmt(m * 1000, 4)} mm`);
     return main + regime
+      + steps([
+        { label: 'sg_bw', sym: `BW = \\frac{${fmt(r.bwHz * trS, 3)}}{t_r}`, num: `\\frac{${fmt(r.bwHz * trS, 3)}}{${q(trS, 's')}}`, res: q(r.bwHz, 'Hz') },
+        { label: 'sg_knee', sym: `f_{knee} = \\frac{${fmt(r.kneeHz * trS, 3)}}{t_r}`, num: `\\frac{${fmt(r.kneeHz * trS, 3)}}{${q(trS, 's')}}`, res: q(r.kneeHz, 'Hz') },
+        { label: 'sg_speed', sym: 'v = \\frac{c}{\\sqrt{ε_{eff}}}', num: `\\frac{${speed(299792458)}}{\\sqrt{${fmt(v.er, 4)}}}`, res: speed(r.v) },
+        { label: 'sg_riseLen', sym: 'l_r = t_r \\cdot v', num: `${q(trS, 's')} \\cdot ${speed(r.v)}`, res: len(r.riseLenM) },
+        { label: 'sg_lumped', sym: 'l_{max} = \\frac{l_r}{6}', num: `\\frac{${len(r.riseLenM)}}{6}`, res: len(r.lumpedM) },
+        r.delayS !== undefined && { label: 'sg_traceDelay', sym: 't_d = \\frac{l}{v}', num: `\\frac{${len(r.delayS * r.v)}}{${speed(r.v)}}`, res: q(r.delayS, 's') },
+        r.skewS !== undefined && { label: 'sg_skew', sym: 'Δt = \\frac{ΔL}{v}', num: `\\frac{${len(r.skewS * r.v)}}{${speed(r.v)}}`, res: q(r.skewS, 's') },
+      ], { note: 'sg_note', where: [['t_r', 'sg_tr', 'tr'], ['ε_{eff}', 'sg_er', 'er']], refs: ['H. Johnson & M. Graham, High-Speed Digital Design (1993)', 'E. Bogatin, Signal and Power Integrity — Simplified'] })
       + block('results', rows([
         ['sg_speed', `${fmt(r.v / 299792458 * 100, 3)} % c · ${fmt(r.tpd * 1e9, 4)} ps/mm`],
         ['sg_riseLen', lenStr(r.riseLenM)],
@@ -244,14 +258,7 @@ export default {
           r.skewS !== undefined && ['sg_skew', si(r.skewS, 's')],
           r.allowedMismatchM !== undefined && ['sg_allowed', lenStr(r.allowedMismatchM)],
         ]))
-        : '')
-      + formulaBlock([
-        'BW = 0.35 / tr(10–90)        f_knee = 0.5 / tr(10–90)',
-        'v = c / √εeff,  t_pd = 1/v,  l_r = tr · v',
-        'lumped if l < l_r/6,  reflections matter if l > l_r/2',
-        'λ = v / f,   δ = √(ρ / (π f µ0))',
-        'skew = ΔL · t_pd',
-      ], 'sg_note', ['H. Johnson & M. Graham, High-Speed Digital Design (1993)', 'E. Bogatin, Signal and Power Integrity — Simplified']);
+        : '');
   },
 };
 

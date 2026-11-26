@@ -1,6 +1,7 @@
 import { calculateTraceWidth } from '../engine/trace-width.js';
 import { thicknessToMil, currentToA, riseToC, tempToC, toMm, MM_PER_MIL } from '../engine/units.js';
-import { hero, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { hero, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, esc } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -36,6 +37,7 @@ const strings = {
     tw_current: 'İzin verilen akım',
     tw_rise: 'Sıcaklık artışı',
     tw_calcWidth: 'Hesaplanan genişlik',
+    tw_solved: 'Bu denklem aranan büyüklük için kapalı biçimde çözülemez; sayısal olarak çözülür. Bulunan değer yerine konunca A₀ geri elde edilir.',
     tw_area: 'Kesit alanı',
     tw_oz: 'Eşdeğer bakır ağırlığı',
     tw_designCurrent: 'Hesaba esas akım',
@@ -121,6 +123,7 @@ const strings = {
     tw_current: 'Allowed current',
     tw_rise: 'Temperature rise',
     tw_calcWidth: 'Calculated width',
+    tw_solved: 'This equation cannot be solved in closed form for the unknown; it is solved numerically. Putting the solution back in returns A₀.',
     tw_area: 'Cross-section area',
     tw_oz: 'Equivalent copper weight',
     tw_designCurrent: 'Design current used',
@@ -188,6 +191,75 @@ const Wh = (mil) => (isImperial()
 const Wsub = (mil) => (isImperial() ? `${fixed(mil * MM_PER_MIL, 3)} mm` : `${fixed(mil, 2)} mil`);
 
 const lenTxt = (mm) => (isImperial() ? `${fmt(mm / MM_PER_MIL, 3)} mil` : `${fmt(mm, 3)} mm`);
+
+/**
+ * Calculation steps. Both standards are empirical fits in mil² and °C, so the
+ * steps show those units; the width is also given in the reader's unit.
+ * IPC-2152 cannot be inverted in closed form: for "current" and "rise" the
+ * equation is solved numerically and the last step puts the solution back in.
+ */
+function worked(r, external) {
+  const A = (x) => tx(`${fmt(x, 4)} mil²`);
+  const mil = (x) => tx(`${fmt(x, 4)} mil`);
+  const iDesign = r.currentA * r.margin;
+  const I = tx(`${fmt(iDesign, 4)} A`);
+  const dT = tx(`${fmt(r.deltaTC, 3)} °C`);
+  const t = mil(r.totalThicknessMil);
+  const etch = r.undercutMil > 0;
+  const fromWidth = {
+    label: 'tw_area', sym: etch ? 'A = (W − W_{etch}) \\cdot t' : 'A = W \\cdot t',
+    num: `${etch ? `(${mil(r.widthMil)} − ${mil(r.undercutMil)})` : mil(r.widthMil)} \\cdot ${t}`, res: A(r.areaMil2),
+  };
+  const toWidth = (area) => ({
+    label: 'tw_calcWidth', sym: etch ? 'W = \\frac{A}{t} + W_{etch}' : 'W = \\frac{A}{t}',
+    num: `\\frac{${A(area)}}{${t}}${etch ? ` + ${mil(r.undercutMil)}` : ''}`,
+    res: isImperial() ? mil(r.calcWidthMil) : `${mil(r.calcWidthMil)} = ${tx(W(r.calcWidthMil))}`,
+  });
+  const margin = r.margin > 1 && r.mode === 'current' && {
+    label: 'tw_current', sym: 'I_{max} = \\frac{I}{1 + m}', num: `\\frac{${I}}{${fmt(r.margin, 3)}}`, res: tx(`${fmt(r.currentA, 4)} A`),
+  };
+  const where = [['I', 'tw_I', 'I'], ['ΔT', 'tw_dT', 'dT'], ['t', 'tw_t', 't'], r.mode !== 'width' && ['W', 'tw_W', 'W']];
+  const needed = r.mode === 'width' ? (r.calcWidthMil - r.undercutMil) * r.totalThicknessMil : r.areaMil2;
+
+  if (r.standard === 'ipc2221') {
+    const k = fmt(external ? 0.048 : 0.024);
+    const e1 = fmt(0.44);
+    const e2 = fmt(0.725);
+    const list = r.mode === 'width' ? [
+      { label: 'tw_area', sym: `A = (\\frac{I}{k \\cdot ΔT^{${e1}}})^{\\frac{1}{${e2}}}`, num: `(\\frac{${I}}{${k} \\cdot {(${dT})}^{${e1}}})^{\\frac{1}{${e2}}}`, res: A(needed) },
+      toWidth(needed),
+    ] : r.mode === 'current' ? [
+      fromWidth,
+      { label: r.margin > 1 ? 'tw_designCurrent' : 'tw_current', sym: `I = k \\cdot ΔT^{${e1}} \\cdot A^{${e2}}`, num: `${k} \\cdot {(${dT})}^{${e1}} \\cdot {(${A(r.areaMil2)})}^{${e2}}`, res: I },
+      margin,
+    ] : [
+      fromWidth,
+      { label: 'tw_rise', sym: `ΔT = (\\frac{I}{k \\cdot A^{${e2}}})^{\\frac{1}{${e1}}}`, num: `(\\frac{${I}}{${k} \\cdot {(${A(r.areaMil2)})}^{${e2}}})^{\\frac{1}{${e1}}}`, res: dT },
+    ];
+    return steps(list, { note: 'tw_note2221', refs: ['IPC-2221B §6.2'], where });
+  }
+
+  const m = r.ipc2152.mods;
+  const c = (x, sig = 4) => fmt(x, sig);
+  const base = {
+    label: 'tw_baseArea',
+    sym: `A_0 = (${c(117.555, 6)} \\cdot ΔT^{−${c(0.913)}} + ${c(1.15)}) \\cdot I^{${c(0.84)} \\cdot ΔT^{−${c(0.108)}} + ${c(1.159)}}`,
+    num: `(${c(117.555, 6)} \\cdot {(${dT})}^{−${c(0.913)}} + ${c(1.15)}) \\cdot {(${I})}^{${c(0.84)} \\cdot {(${dT})}^{−${c(0.108)}} + ${c(1.159)}}`,
+    res: A(r.ipc2152.baseArea),
+  };
+  const mods = `${fixed(m.copper, 3)} \\cdot ${fixed(m.board, 3)} \\cdot ${fixed(m.plane, 3)}`;
+  const list = r.mode === 'width' ? [
+    base,
+    { label: 'tw_area', sym: 'A = A_0 \\cdot M_{Cu} \\cdot M_{board} \\cdot M_{plane}', num: `${A(r.ipc2152.baseArea)} \\cdot ${mods}`, res: A(needed) },
+    toWidth(needed),
+  ] : [
+    fromWidth,
+    { label: 'tw_baseArea', sym: 'A_0 = \\frac{A}{M_{Cu} \\cdot M_{board} \\cdot M_{plane}}', num: `\\frac{${A(r.areaMil2)}}{${mods}}`, res: A(r.ipc2152.baseArea) },
+    { ...base, label: r.mode === 'current' ? (r.margin > 1 ? 'tw_designCurrent' : 'tw_current') : 'tw_rise', note: 'tw_solved' },
+    margin,
+  ];
+  return steps(list, { note: 'tw_note2152', where, refs: ['IPC-2152 (2009)', 'M. Jouppi, “The Value of IPC-2152”', 'J. Olson / L. Rozenblat, smps.us PCB trace calculator'] });
+}
 
 /** Spread label baselines at least `gap` apart (order kept) inside [lo, hi]; sets `ty`. */
 function spread(items, gap, lo, hi) {
@@ -441,22 +513,8 @@ export default {
       ]) + `<p class="note">${esc(t('tw_dcHint'))}</p>`);
     }
 
-    const formula = r.standard === 'ipc2152'
-      ? formulaBlock([
-        'A0 = (117.555·ΔT^−0.913 + 1.15) · I^(0.84·ΔT^−0.108 + 1.159)   [mil²]',
-        'A  = A0 · M_copper(oz, I) · M_board(h) · M_plane(d)',
-        'M_board = 25.959 · h^−0.7666           (h [mil])',
-        'M_plane = min(1, 0.0031·d + 0.4054)    (d [mil])',
-        'W = A / t',
-      ], 'tw_note2152', ['IPC-2152 (2009)', 'M. Jouppi, “The Value of IPC-2152”', 'J. Olson / L. Rozenblat, smps.us PCB trace calculator'])
-      : formulaBlock([
-        'I = k · ΔT^0.44 · A^0.725     k = 0.048 (ext) / 0.024 (int)',
-        'A = ( I / (k·ΔT^0.44) )^(1/0.725)   [mil²]',
-        'W = A / t,   t = oz · 1.378 mil',
-      ], 'tw_note2221', ['IPC-2221B §6.2']);
-
     // Fab check: the (final) width against the fabricator's minimum for this copper weight (foil, without plating).
     const fab = fabCheck({ traceMm: r.widthMil * MM_PER_MIL, oz: thicknessToMil(v.t, u.t) / 1.378, inner: v.std === 'ipc2221' && v.layer === 'int' });
-    return main + messages('warn', r.warnings) + details + mods + compare + dc + fab + formula;
+    return main + messages('warn', r.warnings) + worked(r, v.layer === 'ext') + details + mods + compare + dc + fab;
   },
 };

@@ -7,6 +7,8 @@ import { getPref, setPref } from './prefs.js';
 import { toolById } from './registry.js';
 
 const MAX_SAVED = 500;
+// Longest query kept: a full power tree with long names needs several thousand characters.
+const MAX_QUERY = 8000;
 const clean = (s, n) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
@@ -39,7 +41,7 @@ export function sanitizeSaved(list) {
     out.push({
       id,
       tool: x.tool,
-      query: new URLSearchParams(String(x.query ?? '').slice(0, 2000)).toString(),
+      query: new URLSearchParams(String(x.query ?? '').slice(0, MAX_QUERY)).toString(),
       name: clean(x.name, 80) || x.tool,
       project: clean(x.project, 60),
       value: clean(x.value, 120),

@@ -1,6 +1,7 @@
 import { calculateVia } from '../engine/via.js';
 import { toMm, fromMm, currentToA, riseToC, tempToC } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, fixed, si, siHtml } from '../ui/format.js';
 import { t, locale } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -355,16 +356,30 @@ export default {
     // Fab check: hole, ring on the pad D1 and inner plane clearance (antipad D2).
     const mm = (k) => toMm(v[k], u[k]);
     const fab = fabCheck({ holeMm: mm('d'), padMm: mm('pad'), holeKind: 'via', holeCopperMm: (mm('ap') - mm('d')) / 2 });
-    return main + messages('warn', r.warnings) + block('results', dc) + hf + fab
-      + formulaBlock([
-        'A = π·(r_out² − r_in²),  r_in = d/2,  r_out = r_in + t',
-        'R = ρ(T)·L / A  ,  R_total = R / n',
-        'R_th = L / (k_Cu·A),  k_Cu ≈ 380 W/m·K',
-        'I_max = 0.048 · ΔT^0.44 · A_mil²^0.725   (IPC-2221, per via)',
-        'L = 5.08·h·[ln(4h/d) + 1]  nH     (h, d in inches)',
-        'C = 1.41·εr·T·D1 / (D2 − D1)  pF  (inches)',
-        'T10–90 = 2.2 · C · Z0/2,   f_LC = 1 / (2π√(L·C))',
-        'f_stub = c / (4 · L_stub · √εr)',
-      ], 'vi_note', ['IPC-2221B', 'IPC-6012', 'H. Johnson & M. Graham, High-Speed Digital Design §7']);
+    // Calculation steps. The empirical formulas work in inches and mil², so
+    // those values are shown in the units the formula expects.
+    const q = (x, unit, sig = 4) => tx(`${fmt(x, sig)} ${unit}`);
+    const inch = (k) => q(mm(k) / 25.4, 'in');
+    const rIn = mm('d') / 2;
+    const rOut = rIn + mm('p');
+    const worked = steps([
+      { label: 'vi_area', sym: 'A = π \\cdot (r_{o}^{2} − r_{i}^{2})', num: `π \\cdot ({(${q(rOut, 'mm')})}^{2} − {(${q(rIn, 'mm')})}^{2})`,
+        res: `${q(r.areaMm2, 'mm²')} = ${q(r.areaMil2, 'mil²')}` },
+      { label: multi ? 'vi_rOne' : 'vi_rTotal', sym: 'R = \\frac{ρ \\cdot L}{A}',
+        num: `\\frac{${tx(si(r.resistivity, 'Ω·m'))} \\cdot ${q(mm('L'), 'mm')}}{${q(r.areaMm2, 'mm²')}}`, res: tx(si(r.resistanceOhm, 'Ω')) },
+      multi && { label: 'vi_rTotal', sym: 'R_{total} = \\frac{R}{n}', num: `\\frac{${tx(si(r.resistanceOhm, 'Ω'))}}{${r.count}}`, res: tx(si(r.totalResistanceOhm, 'Ω')) },
+      { label: multi ? 'vi_capOne' : 'vi_capTotal', sym: `I_{max} = ${fmt(0.048)} \\cdot ΔT^{${fmt(0.44)}} \\cdot A^{${fmt(0.725)}}`,
+        num: `${fmt(0.048)} \\cdot {(${q(r.deltaTC, '°C')})}^{${fmt(0.44)}} \\cdot {(${q(r.areaMil2, 'mil²')})}^{${fmt(0.725)}}`, res: q(r.capacityA, 'A', 3) },
+      multi && { label: 'vi_capTotal', sym: 'I_{total} = n \\cdot I_{max}', num: `${r.count} \\cdot ${q(r.capacityA, 'A', 3)}`, res: q(r.totalCapacityA, 'A', 3) },
+      { label: 'vi_rth', sym: 'R_{th} = \\frac{L}{k_{Cu} \\cdot A}', num: `\\frac{${q(mm('L'), 'mm')}}{${tx('380 W/m·K')} \\cdot ${q(r.areaMm2, 'mm²')}}`, res: q(r.thermalResistanceKW, '°C/W', 3) },
+      { label: 'vi_L', sym: `L_{via} = ${fmt(5.08)} \\cdot h \\cdot (\\ln\\frac{4 h}{d} + 1)`,
+        num: `${fmt(5.08)} \\cdot ${inch('L')} \\cdot (\\ln\\frac{4 \\cdot ${inch('L')}}{${inch('d')}} + 1)`, res: q(r.inductanceNh, 'nH', 3) },
+      r.parasitics && { label: 'vi_C', sym: `C = \\frac{${fmt(1.41)} \\cdot ε_r \\cdot T \\cdot D_1}{D_2 − D_1}`,
+        num: `\\frac{${fmt(1.41)} \\cdot ${fmt(v.er, 3)} \\cdot ${inch('L')} \\cdot ${inch('pad')}}{${inch('ap')} − ${inch('pad')}}`, res: q(r.parasitics.capacitancePf, 'pF', 3) },
+      r.stub && { label: 'vi_stubRes', sym: 'f = \\frac{c}{4 \\cdot L_{stub} \\cdot \\sqrt{ε_r}}',
+        num: `\\frac{${tx(`${fmt(299.792458, 4)} mm/ns`)}}{4 \\cdot ${q(r.stub.lengthMm, 'mm')} \\cdot \\sqrt{${fmt(v.er, 3)}}}`, res: tx(si(r.stub.quarterWaveHz, 'Hz')) },
+    ], { note: 'vi_note', where: [['L', 'vi_len', 'L'], ['ΔT', 'vi_rise', 'dT'], multi && ['n', 'vi_count', 'n'], ['h', 'vi_len', 'L'], ['d', 'vi_drill', 'd'],
+      r.parasitics && ['D_1', 'vi_pad', 'pad'], r.parasitics && ['D_2', 'vi_antipad', 'ap']], refs: ['IPC-2221B', 'IPC-6012', 'H. Johnson & M. Graham, High-Speed Digital Design §7'] });
+    return main + messages('warn', r.warnings) + worked + block('results', dc) + hf + fab;
   },
 };

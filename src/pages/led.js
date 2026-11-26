@@ -1,6 +1,7 @@
 import { ledResistor } from '../engine/circuit.js';
 import { TOLERANCE } from '../engine/eseries.js';
-import { heroes, rows, block, formulaBlock, messages } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml, esc } from '../ui/format.js';
 import { svg, twoTerm, wire, node, ground, arrow, dimH, text } from '../ui/svg.js';
 import { t, locale } from '../i18n.js';
@@ -182,11 +183,20 @@ export default {
   render(r, v) {
     if (!r.ok) return messages('error', r.errors, { led_headroom: { v: si(r.vLeds, 'V') } });
     const vars = { led_lowHeadroom: { v: si(r.drop, 'V', 3) }, led_highCurrent: { i: `${fmt(v.if)} mA` } };
+    // Formula parts for the steps: with one LED the count is left out.
+    const qV = (x) => tx(si(x, 'V'));
+    const symN = v.n > 1 ? 'N \\cdot ' : '';
+    const numN = v.n > 1 ? `${fmt(v.n)} \\cdot ` : '';
     return heroes([
       ['led_rRec', siHtml(r.rRec, 'Ω'), `${esc(v.ser)} · ${esc(t('led_rRecSub'))}`],
       ['led_iRec', siHtml(r.iRec, 'A'), `${esc(t('led_pR'))}: ${si(r.pR, 'W', 3)}`],
     ])
       + messages('warn', r.warnings, vars)
+      + steps([
+        { label: 'led_rExact', sym: `R = \\frac{V_s − ${symN}V_f}{I_f}`, num: `\\frac{${qV(v.vs)} − ${numN}${qV(v.vf)}}{${tx(`${fmt(v.if)} mA`)}}`, res: tx(si(r.rExact, 'Ω')) },
+        { label: 'led_iRec', sym: `I = \\frac{V_s − ${symN}V_f}{R_{std}}`, num: `\\frac{${qV(v.vs)} − ${numN}${qV(v.vf)}}{${tx(si(r.rRec, 'Ω'))}}`, res: tx(si(r.iRec, 'A')) },
+        { label: 'led_pR', sym: `P_R = (V_s − ${symN}V_f) \\cdot I`, num: `${qV(r.drop)} \\cdot ${tx(si(r.iRec, 'A'))}`, res: tx(si(r.pR, 'W')) },
+      ], { note: 'led_note', where: [['V_s', 'led_vs', 'vs'], ['V_f', 'led_vf', 'vf'], ['I_f', 'led_if', 'if'], v.n > 1 && ['N', 'led_n', 'n']], refs: ['Ohm’s law', 'IEC 60063:2015 (E-series)'] })
       + block('led_resistorTitle', rows([
         ['led_rExact', si(r.rExact, 'Ω')],
         ['led_rNearest', si(r.rNearest, 'Ω')],
@@ -200,13 +210,7 @@ export default {
         v.n > 1 && ['led_pLeds', si(r.pLeds, 'W')],
         ['led_pSupply', si(r.pSupply, 'W')],
         ['led_eff', pctOf(r.efficiency)],
-      ]))
-      + formulaBlock([
-        'R    = (Vs − N · Vf) / If',
-        'I    = (Vs − N · Vf) / R_std',
-        'P_R  = (Vs − N · Vf) · I,     rating ≥ 2 · P_R',
-        'P_LED = Vf · I,   η = N · Vf / Vs',
-      ], 'led_note', ['Ohm’s law', 'IEC 60063:2015 (E-series)']);
+      ]));
   },
 };
 

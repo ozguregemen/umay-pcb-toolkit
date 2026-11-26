@@ -20,6 +20,7 @@ export const LESSONS = [
   { id: 'trace-current', part: 'basics', minutes: 12, tools: ['trace', 'fusing'] },
   { id: 'spacing', part: 'basics', minutes: 8, tools: ['spacing'] },
   { id: 'vias', part: 'basics', minutes: 10, tools: ['via', 'padstack', 'fanout'] },
+  { id: 'placement-routing', part: 'basics', minutes: 14, tools: ['trace', 'via', 'fanout', 'crosstalk', 'stackup'] },
   { id: 'circuit-basics', part: 'basics', minutes: 12, tools: ['ohm', 'divider', 'led', 'rc', 'eseries', 'colorcode', 'combine', 'timer555'] },
   { id: 'analog-chain', part: 'basics', minutes: 16, tools: ['adc', 'ntc', 'shunt', 'opamp', 'divider', 'rc'] },
   { id: 'impedance', part: 'signal', minutes: 12, tools: ['impedance', 'signal', 'reflection', 'interfaces'] },

@@ -8,7 +8,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 | Area | Calculator | Method |
 |---|---|---|
-| Learn | **Learning path** | 19 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, the analog measurement chain from sensor to ADC, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
+| Learn | **Learning path** | 20 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, placement and routing strategy, circuit basics, the analog measurement chain from sensor to ADC, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
 | PCB & IPC | **Trace width & current** | IPC-2152 baseline-chart fit with copper, board-thickness and plane modifiers; IPC-2221. Solves width, current or temperature rise; etch factor, plating, current density, AC resistance; DC losses; side-by-side comparison. |
 | | **Conductor spacing** | IPC-2221B Table 6-1 (B1–A7), > 500 V rule, inverse (spacing → voltage), mains-safety warning. |
 | | **Via** | DC resistance, IPC-2221 current capacity, thermal resistance, parallel vias, Johnson L/C, impedance and rise-time degradation. |
@@ -17,11 +17,12 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 | | **IPC rules reference** | Classes, producibility levels, annular ring, plating, defects, copper thickness, bow & twist, dielectric. |
 | | **Layer stack-up** | 2–10 layers from generic and published fabricator stack-ups (JLCPCB, PCBWay); total thickness vs target, symmetry, reference planes, impedance and target widths per signal layer, to-scale cross-section. |
 | | **Fab capability check** | JLCPCB, PCBWay, Eurocircuits and a generic IPC Level B preset; trace, via, pad, fan-out, spacing and stack-up pages check the design against the chosen fab's minimums. |
-| Signal integrity | **Impedance** | Hammerstad–Jensen microstrip, Wheeler stripline, asymmetric stripline, embedded microstrip, CPWG, differential pairs (AN-905); synthesis (target Z → width), loss, delay; IPC-2141 comparison. |
+| Signal integrity | **Impedance** | Hammerstad–Jensen microstrip, Wheeler stripline, asymmetric stripline, embedded microstrip, CPWG, differential pairs (AN-905); synthesis (target Z → width), loss, delay; IPC-2141 comparison. Tolerance analysis: how much trace width (etching), dielectric thickness, εr and copper thickness move the impedance, each one's share, exact worst case and RSS, checked against the target window. |
 | | **Interface design rules** | USB 2.0/3.x, PCIe Gen1–5, SATA, HDMI, MIPI D-PHY, LVDS, Ethernet (MDI, RGMII), DDR3/4/5, CAN, RS-485, I²C/SPI: impedance, skew and group matching, vias, reference planes, AC caps, termination — each value with its source (standards and vendor layout guides); skew ⇄ length converter; opens the impedance calculator with the target. |
 | | **SI basics** | Bandwidth, knee frequency, critical length, wavelength, skin depth, skew. |
 | | **Crosstalk** | Johnson / Brooks NEXT estimate, stripline, length factor, 3W rule, required gap. |
-| Power & thermal | **PDN & decoupling** | Target impedance, bulk capacitance, R-L-C capacitor bank impedance plot, plane capacitance. |
+| Power & thermal | **Power tree and budget** | Source → regulators (LDO, buck, boost, buck-boost, load switch) → loads: current, loss, efficiency and junction temperature of every regulator in a typical and a worst-case scenario, warnings (dropout, overload, wrong topology), a drawing of the tree. |
+| | **PDN & decoupling** | Target impedance, bulk capacitance, R-L-C capacitor bank impedance plot, plane capacitance. |
 | | **Thermal** | Junction temperature, θ chain, required heatsink, LDO dissipation. |
 | | **Routing between pads** | Traces between BGA/connector pads, diagonal channel, dog-bone via size. |
 | Signal integrity (more) | **Reflection & VSWR**, **RF attenuator** (Pi/T/bridged-T with standard values) | — |
@@ -45,7 +46,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 See [docs/karsilastirma.md](docs/karsilastirma.md) for a comparison with Saturn PCB Toolkit, KiCad, Sierra Circuits, Polar, Rogers and others.
 
-Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Tools can be starred as favourites, and a calculation can be saved under a name and a project and reopened later (kept in the browser; export and import as a JSON file). `Ctrl K` searches the calculators, the text of every lesson, the glossary terms and the saved calculations. Turkish/English UI, light/dark theme, mm/mil preference, mobile layout. After the first visit the whole app works offline (service worker, network first; installable as a PWA). Numbers are shown without thousands separators, so "3950" is never mistaken for 3.95.
+Every result shows its formula, sources and validity warnings. The most used calculators (Ohm’s law, divider, LED, RC, thermal, trace width, via, fusing, signal integrity, impedance, power tree) show the **calculation step by step** right under the result: the formula in symbols, the same formula with your numbers, and the value it gives, set as real mathematics (native MathML, no library); pointing at a symbol marks the input it comes from. Most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Tools can be starred as favourites, and a calculation can be saved under a name and a project and reopened later (kept in the browser; export and import as a JSON file). `Ctrl K` searches the calculators, the text of every lesson, the glossary terms and the saved calculations. Turkish/English UI, light/dark theme, mm/mil preference, mobile layout. After the first visit the whole app works offline (service worker, network first; installable as a PWA). Numbers are shown without thousands separators, so "3950" is never mistaken for 3.95.
 
 See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineering review: what was wrong in earlier versions, the methods used now, how they were validated, and known limitations.
 
@@ -64,7 +65,7 @@ src/learn/              Learning path: lesson catalogue, Markdown renderer, less
 src/registry.js         Tool catalogue: ids, categories, search keywords
 src/engine/             Pure calculation engine (no DOM) — easy to test and reuse
 src/pages/              One module per calculator: strings (tr/en), fields, compute, render
-src/ui/                 Form framework, formatting, icons, search palette, SVG chart
+src/ui/                 Form framework, calculation steps and formula notation (math.js), formatting, icons, search palette, SVG chart
 src/i18n.js             Core Turkish / English strings
 tests/cases/            Engine, diagram and integrity tests (shared by Node and the browser runner)
 docs/                   Engineering notes
@@ -91,7 +92,7 @@ python -m http.server 8080
 npm test                  # Node ≥ 18, no dependencies
 ```
 
-Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. `tests/cases/integrity.js` checks the catalogue: every tool and lesson has names in both languages, Turkish and English define the same keys, every lesson button opens a calculator with parameters that exist, and every default result cites a source. `tests/cases/search.js` checks the lesson search (every indexed section is a real anchor on the page) and the validation of saved and imported calculations. CI runs the tests on every push and pull request; the site is only deployed when they pass.
+Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. `tests/cases/integrity.js` checks the catalogue: every tool and lesson has names in both languages, Turkish and English define the same keys, every lesson button opens a calculator with parameters that exist, and every default result cites a source. `tests/cases/math.js` checks the formula notation and that every calculator showing calculation steps renders complete formulas (no missing value) in both languages; `tests/cases/tolerance.js` checks the impedance tolerance analysis against direct recalculations. `tests/cases/search.js` checks the lesson search (every indexed section is a real anchor on the page) and the validation of saved and imported calculations. CI runs the tests on every push and pull request; the site is only deployed when they pass.
 
 ## Adding a calculator
 

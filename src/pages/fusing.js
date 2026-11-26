@@ -1,6 +1,7 @@
 import { calculateFusing, onderdonkCurrent } from '../engine/fusing.js';
 import { toMm, thicknessToMil, MM_PER_MIL, tempToC, currentToA } from '../engine/units.js';
-import { heroes, rows, block, formulaBlock, messages, invalid } from '../ui/calculator.js';
+import { heroes, rows, block, steps, messages, invalid } from '../ui/calculator.js';
+import { tx } from '../ui/math.js';
 import { fmt, si, siHtml } from '../ui/format.js';
 import { t } from '../i18n.js';
 import { isImperial } from '../prefs.js';
@@ -270,23 +271,37 @@ export default {
     });
   },
 
-  render(r, v) {
+  render(r, v, u) {
     if (!r.ok) return invalid(r.errors);
     const first = v.m === 'time'
       ? ['fu_time', siHtml(r.timeS, 's')]
       : ['fu_onderdonk', `${fmt(r.onderdonkA, 4)} <span class="u">A</span>`];
+    // Values for the calculation steps (Onderdonk works in circular mils and °C).
+    const ta = tempToC(v.ta, u.ta);
+    const mm = (x) => tx(`${fmt(x, 4)} mm`);
+    const cmil = tx(`${fmt(r.areaCmil, 4)} cmil`);
+    const heat = `\\log_{10}(1 + \\frac{${tx('1083 °C')} − ${tx(`${fmt(ta, 3)} °C`)}}{234 + ${tx(`${fmt(ta, 3)} °C`)}})`;
+    const area = isVia(v)
+      ? { label: 'fu_area', sym: 'A = π \\cdot (r_{o}^{2} − r_{i}^{2})',
+        num: `π \\cdot ({(${mm(toMm(v.d, u.d) / 2 + toMm(v.p, u.p))})}^{2} − {(${mm(toMm(v.d, u.d) / 2)})}^{2})`, res: `${tx(`${fmt(r.areaMm2, 4)} mm²`)} = ${cmil}` }
+      : { label: 'fu_area', sym: 'A = w \\cdot t_{Cu}', num: `${mm(toMm(v.w, u.w))} \\cdot ${mm(thicknessToMil(v.t, u.t) * MM_PER_MIL)}`, res: `${tx(`${fmt(r.areaMm2, 4)} mm²`)} = ${cmil}` };
+    const onderdonk = v.m === 'time'
+      ? { label: 'fu_time', sym: 't = \\frac{A^{2}}{33 \\cdot I^{2}} \\cdot \\log_{10}(1 + \\frac{T_m − T_a}{234 + T_a})',
+        num: `\\frac{{(${cmil})}^{2}}{33 \\cdot {(${tx(si(currentToA(v.I, u.I), 'A'))})}^{2}} \\cdot ${heat}`, res: tx(si(r.timeS, 's')) }
+      : { label: 'fu_onderdonk', sym: 'I = A \\cdot \\sqrt{\\frac{\\log_{10}(1 + \\frac{T_m − T_a}{234 + T_a})}{33 \\cdot t}}',
+        num: `${cmil} \\cdot \\sqrt{\\frac{${heat}}{33 \\cdot ${tx(si(v.dur * tMul[u.dur], 's'))}}}`, res: tx(`${fmt(r.onderdonkA, 4)} A`) };
     return heroes([first, ['fu_preece', `${fmt(r.preeceA, 4)} <span class="u">A</span>`]])
       + messages('warn', r.warnings)
+      + steps([
+        area,
+        onderdonk,
+        { label: 'fu_preece', sym: `I = 10244 \\cdot d^{${fmt(1.5)}}`, num: `10244 \\cdot {(${tx(`${fmt(r.equivDiameterMm / 25.4, 4)} in`)})}^{${fmt(1.5)}}`, res: tx(`${fmt(r.preeceA, 4)} A`) },
+      ], { note: 'fu_note', where: [!isVia(v) && ['w', 'fu_w', 'w'], !isVia(v) && ['t_{Cu}', 'fu_t', 't'],
+        v.m === 'time' ? ['I', 'fu_I', 'I'] : ['t', 'fu_dur', 'dur'], ['T_a', 'ambientTemp', 'ta']], refs: ['I. M. Onderdonk (1928)', 'W. H. Preece (1884)', 'D. Brooks, “Fusing currents in traces”'] })
       + block('results', rows([
         ['fu_area', `${fmt(r.areaMm2, 4)} mm² · ${fmt(r.areaCmil, 4)} cmil`],
         ['fu_diam', `${fmt(r.equivDiameterMm, 4)} mm`],
         ['fu_i2t', `${si(r.i2t, 'A²s')}`],
-      ]))
-      + formulaBlock([
-        'Onderdonk:  I = A · √( log10(1 + (Tm − Ta)/(234 + Ta)) / (33·t) )',
-        '            A [cmil], t [s], Tm = 1083 °C',
-        'Preece:     I = 10244 · d^1.5            d [in], equal-area round wire',
-        'I²t = log10(1 + (Tm − Ta)/(234 + Ta)) · A² / 33',
-      ], 'fu_note', ['I. M. Onderdonk (1928)', 'W. H. Preece (1884)', 'D. Brooks, “Fusing currents in traces”']);
+      ]));
   },
 };

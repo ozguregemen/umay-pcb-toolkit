@@ -52,6 +52,8 @@ export const TOOLS = [
     load: () => import('./pages/matching.js') },
   { id: 'emc', cat: 'rf', icon: 'shield', keywords: 'emc emi dikiş via stitching aralık slot yarık rezonans resonance lc filtre filter ferrit ferrite boncuk bead λ/20',
     load: () => import('./pages/emc.js') },
+  { id: 'powertree', cat: 'power', icon: 'tree', keywords: 'güç ağacı power tree bütçe budget ray rail regülatör regulator ldo buck boost verim efficiency kayıp loss tüketim',
+    load: () => import('./pages/powertree.js') },
   { id: 'pdn', cat: 'power', icon: 'pdn', keywords: 'pdn decoupling dekuplaj target impedance hedef empedans capacitor kondansatör esl esr bulk',
     load: () => import('./pages/pdn.js') },
   { id: 'dcdc', cat: 'power', icon: 'dcdc', keywords: 'dc-dc buck boost converter dönüştürücü regulator regülatör inductor bobin ripple dalgalanma smps',

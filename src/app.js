@@ -249,6 +249,12 @@ onPrefChange((k) => {
   else if (k === 'favs' || k === 'saved') renderNav(navActive);
 });
 
+// Remember whether the reader keeps the calculation steps open: the result is
+// redrawn on every keystroke, so the state cannot live in the element.
+document.addEventListener('toggle', (e) => {
+  if (e.target.matches?.('details.steps') && (getPref('stepsOpen') !== false) !== e.target.open) setPref('stepsOpen', e.target.open);
+}, true);
+
 // ---- Search ----
 document.addEventListener('click', (e) => {
   if (e.target.closest('[data-open-palette]')) openPalette();
