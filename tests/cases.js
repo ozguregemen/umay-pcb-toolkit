@@ -12,9 +12,10 @@ import { cases as stackup } from './cases/stackup.js';
 import { cases as circuit2 } from './cases/circuit2.js';
 import { cases as power2 } from './cases/power2.js';
 import { cases as diagrams } from './cases/diagrams.js';
+import { cases as integrity } from './cases/integrity.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
-  ...diagrams,
+  ...diagrams, ...integrity,
 ];

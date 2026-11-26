@@ -45,7 +45,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 See [docs/karsilastirma.md](docs/karsilastirma.md) for a comparison with Saturn PCB Toolkit, KiCad, Sierra Circuits, Polar, Rogers and others.
 
-Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout.
+Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout. After the first visit the whole app works offline (service worker, network first; installable as a PWA). Numbers are shown without thousands separators, so "3950" is never mistaken for 3.95.
 
 See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineering review: what was wrong in earlier versions, the methods used now, how they were validated, and known limitations.
 
@@ -55,14 +55,17 @@ See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineeri
 
 ```
 index.html              App shell (no build step)
+sw.js                   Service worker: network first, cache as offline fallback
 assets/                 Stylesheet and icon
-src/app.js              Router (lazy-loads pages), sidebar, preferences
+src/app.js              Router (lazy-loads pages), collapsible sidebar, preferences
+src/offline.js          Registers sw.js and fills the offline cache in the background
+src/learn/              Learning path: lesson catalogue, Markdown renderer, lessons, figures
 src/registry.js         Tool catalogue: ids, categories, search keywords
 src/engine/             Pure calculation engine (no DOM) — easy to test and reuse
 src/pages/              One module per calculator: strings (tr/en), fields, compute, render
 src/ui/                 Form framework, formatting, icons, search palette, SVG chart
 src/i18n.js             Core Turkish / English strings
-tests/cases/            Engine tests (shared by Node and the browser runner)
+tests/cases/            Engine, diagram and integrity tests (shared by Node and the browser runner)
 docs/                   Engineering notes
 .github/workflows/      Test + deploy to GitHub Pages
 ```
@@ -85,7 +88,7 @@ python -m http.server 8080
 npm test                  # Node ≥ 18, no dependencies
 ```
 
-Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. CI runs the tests on every push and pull request; the site is only deployed when they pass.
+Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. `tests/cases/integrity.js` checks the catalogue: every tool and lesson has names in both languages, Turkish and English define the same keys, every lesson button opens a calculator with parameters that exist, and every default result cites a source. CI runs the tests on every push and pull request; the site is only deployed when they pass.
 
 ## Adding a calculator
 

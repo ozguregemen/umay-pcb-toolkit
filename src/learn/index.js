@@ -16,22 +16,22 @@ import { addZoomButtons } from '../ui/zoom.js';
  */
 export const LESSONS = [
   { id: 'pcb-basics', part: 'basics', minutes: 12, tools: ['ipcref'] },
-  { id: 'stackup', part: 'basics', minutes: 10, tools: ['impedance'] },
+  { id: 'stackup', part: 'basics', minutes: 10, tools: ['stackup', 'impedance'] },
   { id: 'trace-current', part: 'basics', minutes: 12, tools: ['trace', 'fusing'] },
   { id: 'spacing', part: 'basics', minutes: 8, tools: ['spacing'] },
   { id: 'vias', part: 'basics', minutes: 10, tools: ['via', 'padstack', 'fanout'] },
   { id: 'circuit-basics', part: 'basics', minutes: 12, tools: ['ohm', 'divider', 'led', 'rc', 'eseries', 'colorcode', 'combine', 'timer555'] },
-  { id: 'impedance', part: 'advanced', minutes: 12, tools: ['signal', 'impedance', 'reflection'] },
-  { id: 'signal-integrity', part: 'advanced', minutes: 12, tools: ['signal', 'crosstalk', 'reflection'] },
-  { id: 'rf-antennas', part: 'advanced', minutes: 12, tools: ['antenna', 'inductor', 'impedance', 'reflection'] },
-  { id: 'pdn', part: 'advanced', minutes: 12, tools: ['pdn', 'dcdc'] },
-  { id: 'thermal', part: 'advanced', minutes: 10, tools: ['thermal', 'via', 'trace'] },
-  { id: 'power-layout', part: 'advanced', minutes: 12, tools: ['dcdc', 'mosfet', 'snubber', 'pdn', 'thermal'] },
-  { id: 'grounding-emc', part: 'advanced', minutes: 12, tools: ['emc', 'signal', 'crosstalk', 'stackup'] },
-  { id: 'esd-protection', part: 'advanced', minutes: 10, tools: ['spacing', 'trace', 'fusing', 'inrush'] },
-  { id: 'schematic-review', part: 'advanced', minutes: 12, tools: ['divider', 'i2c', 'switch', 'led', 'crystal'] },
-  { id: 'bring-up', part: 'advanced', minutes: 12, tools: ['shunt', 'battery', 'inrush', 'ohm'] },
-  { id: 'dfm', part: 'advanced', minutes: 10, tools: ['ipcref', 'padstack', 'spacing'] },
+  { id: 'impedance', part: 'signal', minutes: 12, tools: ['impedance', 'signal', 'reflection', 'interfaces'] },
+  { id: 'signal-integrity', part: 'signal', minutes: 12, tools: ['signal', 'crosstalk', 'reflection', 'interfaces'] },
+  { id: 'rf-antennas', part: 'signal', minutes: 12, tools: ['antenna', 'inductor', 'matching', 'impedance', 'reflection'] },
+  { id: 'pdn', part: 'power', minutes: 12, tools: ['pdn', 'dcdc'] },
+  { id: 'thermal', part: 'power', minutes: 10, tools: ['thermal', 'via', 'trace'] },
+  { id: 'power-layout', part: 'power', minutes: 12, tools: ['dcdc', 'mosfet', 'snubber', 'pdn', 'thermal'] },
+  { id: 'grounding-emc', part: 'power', minutes: 12, tools: ['emc', 'signal', 'crosstalk', 'stackup'] },
+  { id: 'esd-protection', part: 'power', minutes: 10, tools: ['spacing', 'trace', 'fusing', 'inrush'] },
+  { id: 'schematic-review', part: 'process', minutes: 12, tools: ['divider', 'i2c', 'switch', 'led', 'crystal'] },
+  { id: 'dfm', part: 'process', minutes: 10, tools: ['ipcref', 'padstack', 'spacing', 'stackup'] },
+  { id: 'bring-up', part: 'process', minutes: 12, tools: ['shunt', 'battery', 'inrush', 'ohm'] },
   { id: 'glossary', part: 'reference', minutes: 5, tools: [] },
 ];
 
@@ -44,7 +44,9 @@ export const lessonDescKey = (id) => `lesson_${id}_desc`;
 
 const PARTS = [
   { id: 'basics', title: 'learn_partBasics', desc: 'learn_partBasicsDesc' },
-  { id: 'advanced', title: 'learn_partAdvanced', desc: 'learn_partAdvancedDesc' },
+  { id: 'signal', title: 'learn_partSignal', desc: 'learn_partSignalDesc' },
+  { id: 'power', title: 'learn_partPower', desc: 'learn_partPowerDesc' },
+  { id: 'process', title: 'learn_partProcess', desc: 'learn_partProcessDesc' },
   { id: 'reference', title: 'learn_partReference', desc: 'learn_partReferenceDesc' },
 ];
 

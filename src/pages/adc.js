@@ -155,7 +155,7 @@ const strings = {
 
 const isScale = (s) => (v) => v.scale === s;
 const pct = (x) => new Intl.NumberFormat(locale(), { style: 'percent', maximumSignificantDigits: 3 }).format(x);
-const intFmt = (n) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(n);
+const intFmt = (n) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0, useGrouping: false }).format(n);
 const dbTxt = (x) => `${fmt(x, 4)} dB`;
 /** Value in the measured unit: volts get SI prefixes, other units plain. */
 const qty = (x, v, sig = 4) => (v.scale === 'gain' ? `${fmt(x, sig)} ${v.qu || ''}`.trim() : si(x, 'V', sig));

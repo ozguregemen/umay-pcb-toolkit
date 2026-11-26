@@ -61,7 +61,7 @@ IFA (inverted-F, ters F) anten, kısa devre ayağı sayesinde çeyrek dalga mono
 
 Antenin empedansı kart üzerinde nadiren tam 50 Ω çıkar. Beslemeye bir **π eşleştirme ağı** için üç pad bırakın: ilk kartta seri eleman 0 Ω, paralel elemanlar boş (DNP). Kart gelince vektör ağ analizörüyle (VNA) S11 ölçülür ve Smith abağında L/C değerleri seçilir. Hedef, çalışma bandında **S11 < −10 dB** (VSWR < 2), yani gücün en fazla %10’unun geri yansımasıdır.
 
-[[calc:reflection|Yansıma ve VSWR hesaplayıcısı]]
+[[calc:matching|π eşleştirme değerlerini hesapla]] [[calc:reflection|Yansıma ve VSWR hesaplayıcısı]]
 
 > [!TIP] Ayarı her zaman ürünün son hâlinde yapın: kutu kapalı, pil takılı, kablolar yerinde. Elde tutulan cihazlarda kullanıcının eli de anteni kaydırır.
 
@@ -164,7 +164,7 @@ An IFA (inverted-F antenna) is a quarter-wave monopole folded parallel to the bo
 
 The antenna impedance on a real board is rarely exactly 50 Ω. Leave three pads for a **π matching network** at the feed: on the first board the series part is 0 Ω and the shunt parts are not fitted (DNP). When boards arrive, S11 is measured with a vector network analyser (VNA) and L/C values are chosen on the Smith chart. The target is **S11 < −10 dB** (VSWR < 2) across the band, i.e. at most 10 % of the power reflected.
 
-[[calc:reflection|Reflection and VSWR calculator]]
+[[calc:matching|Calculate the π-match values]] [[calc:reflection|Reflection and VSWR calculator]]
 
 > [!TIP] Always tune the final product: enclosure closed, battery fitted, cables in place. For handheld devices the user’s hand detunes the antenna too.
 

@@ -19,6 +19,7 @@ const tr = {
   unitsToggleTitle: 'Varsayılan uzunluk birimi (mm / mil)',
   sourceCode: 'Kaynak kod',
   testsLink: 'Motor testleri',
+  reportIssue: 'Hata bildir',
   methodology: 'Yöntem ve kaynaklar',
   disclaimer:
     'Sonuçlar tasarım kararlarına yardımcı olacak mühendislik tahminleridir. Kritik tasarımlarda resmi IPC standartlarını ve üreticinizin kurallarını esas alın.',
@@ -27,8 +28,10 @@ const tr = {
 
   catPcb: 'PCB ve IPC kuralları',
   catSi: 'Sinyal bütünlüğü',
+  catRf: 'RF ve EMC',
   catPower: 'Güç ve termal',
   catCircuit: 'Temel devre',
+  catAnalog: 'Analog ve arayüz devreleri',
   catTools: 'Araçlar',
 
   tool_trace: 'İz genişliği ve akım',
@@ -125,8 +128,12 @@ const tr = {
   learn_minutes: '{n} dk okuma',
   learn_partBasics: 'Temeller',
   learn_partBasicsDesc: 'İlk kartınızı tasarlarken bilmeniz gerekenler.',
-  learn_partAdvanced: 'İleri konular',
-  learn_partAdvancedDesc: 'Hızlı sinyaller, güç bütünlüğü, termal ve üretim.',
+  learn_partSignal: 'Hızlı sinyaller ve RF',
+  learn_partSignalDesc: 'Empedans, sinyal bütünlüğü, antenler ve eşleştirme.',
+  learn_partPower: 'Güç, termal ve EMC',
+  learn_partPowerDesc: 'Güç dağıtımı, ısı, güç kaynağı yerleşimi, topraklama ve koruma.',
+  learn_partProcess: 'Tasarımdan ürüne',
+  learn_partProcessDesc: 'Şematik inceleme, üretilebilirlik ve kartın ilk çalıştırılması.',
   learn_partReference: 'Başvuru',
   learn_partReferenceDesc: 'Sık kullanılan terimler ve kısaltmalar.',
   learn_toc: 'Bu derste',
@@ -179,7 +186,7 @@ const tr = {
 
   homeTitle: 'Donanım tasarımında ihtiyaç duyduğunuz hesaplar, tek yerde',
   homeLead:
-    'IPC kurallarına dayalı PCB hesapları, sinyal bütünlüğü, güç ve temel devre araçları. Kurulum yok, veri cihazınızdan çıkmaz, her sonuçla formülü ve geçerlilik uyarıları görünür.',
+    'IPC kurallarına dayalı PCB hesapları, sinyal bütünlüğü, RF, güç ve devre araçları. Kurulum yok, veri cihazınızdan çıkmaz, ilk ziyaretten sonra çevrimdışı da çalışır; her sonuçla formülü, kaynağı ve geçerlilik uyarıları görünür.',
   homeRecent: 'Son kullanılanlar',
   zoomIn: 'Büyüt',
   close: 'Kapat',
@@ -264,6 +271,7 @@ const en = {
   unitsToggleTitle: 'Default length unit (mm / mil)',
   sourceCode: 'Source code',
   testsLink: 'Engine tests',
+  reportIssue: 'Report a problem',
   methodology: 'Method and sources',
   disclaimer:
     'Results are engineering estimates to support design decisions. For critical designs, rely on the official IPC standards and your fabricator’s rules.',
@@ -272,8 +280,10 @@ const en = {
 
   catPcb: 'PCB & IPC rules',
   catSi: 'Signal integrity',
+  catRf: 'RF & EMC',
   catPower: 'Power & thermal',
   catCircuit: 'Circuit basics',
+  catAnalog: 'Analog & interface circuits',
   catTools: 'Tools',
 
   tool_trace: 'Trace width & current',
@@ -369,8 +379,12 @@ const en = {
   learn_minutes: '{n} min read',
   learn_partBasics: 'Foundations',
   learn_partBasicsDesc: 'What you need for your first board.',
-  learn_partAdvanced: 'Advanced topics',
-  learn_partAdvancedDesc: 'Fast signals, power integrity, thermal and manufacturing.',
+  learn_partSignal: 'Fast signals and RF',
+  learn_partSignalDesc: 'Impedance, signal integrity, antennas and matching.',
+  learn_partPower: 'Power, thermal and EMC',
+  learn_partPowerDesc: 'Power distribution, heat, power-supply layout, grounding and protection.',
+  learn_partProcess: 'From design to product',
+  learn_partProcessDesc: 'Schematic review, manufacturability and board bring-up.',
   learn_partReference: 'Reference',
   learn_partReferenceDesc: 'Common terms and abbreviations.',
   learn_toc: 'In this lesson',
@@ -423,7 +437,7 @@ const en = {
 
   homeTitle: 'The calculations hardware design needs, in one place',
   homeLead:
-    'PCB calculations based on IPC rules, plus signal integrity, power and circuit tools. Nothing to install, no data leaves your device, and every result shows its formula and validity warnings.',
+    'PCB calculations based on IPC rules, plus signal integrity, RF, power and circuit tools. Nothing to install, no data leaves your device, it works offline after the first visit, and every result shows its formula, source and validity warnings.',
   homeRecent: 'Recently used',
   zoomIn: 'Enlarge',
   close: 'Close',

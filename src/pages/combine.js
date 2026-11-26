@@ -146,6 +146,6 @@ export default {
       + formulaBlock([
         'R, L:  series = Σ x_i        parallel = 1 / Σ (1/x_i)',
         'C:     series = 1 / Σ (1/C_i)   parallel = Σ C_i',
-      ], 'cb_note');
+      ], 'cb_note', ['P. Horowitz & W. Hill, The Art of Electronics, 3rd ed., ch. 1']);
   },
 };

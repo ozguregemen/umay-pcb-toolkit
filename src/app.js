@@ -5,6 +5,7 @@ import { TOOLS, CATEGORIES, toolById, titleKey, descKey } from './registry.js';
 import { mountCalculator } from './ui/calculator.js';
 import { openPalette, initPaletteShortcuts } from './ui/palette.js';
 import { installZoom } from './ui/zoom.js';
+import { initOffline } from './offline.js';
 import { icon } from './ui/icons.js';
 import { esc } from './ui/format.js';
 import { getPref, setPref, pushRecent, onPrefChange } from './prefs.js';
@@ -21,8 +22,18 @@ function parseHash() {
   return { id: path, params: new URLSearchParams(query) };
 }
 
+// With 40+ tools the sidebar would be two screens long, so categories are
+// collapsible: the one holding the current tool is open, the rest follow what
+// the reader opened or closed (remembered), and recently used tools sit on top.
 function renderNav(activeId) {
   const cur = (id) => (id === activeId ? ' aria-current="page"' : '');
+  const openPref = getPref('navOpen') || {};
+  const activeCat = toolById(activeId)?.cat;
+  const link = (x, mark = true) => `
+    <a href="#/${x.id}"${mark && x.id === activeId ? ' aria-current="page"' : ''}>${icon(x.icon, 18)}<span>${esc(t(titleKey(x.id)))}</span></a>`;
+  // Alphabetical, so entries do not jump around on every navigation.
+  const recent = (getPref('recent') || []).slice(0, 4).map(toolById).filter(Boolean)
+    .sort((a, b) => t(titleKey(a.id)).localeCompare(t(titleKey(b.id)), getLang()));
   navEl.innerHTML = `
     <a class="nav-home" href="#/"${cur('')}>${icon('home', 18)}<span>${esc(t('home'))}</span></a>
     <div class="nav-group">
@@ -30,13 +41,28 @@ function renderNav(activeId) {
       <a href="#/learn"${cur('learn')}>${icon('book', 18)}<span>${esc(t('learn_title'))}</span></a>
       <a href="#/learn/glossary"${cur('learn/glossary')}>${icon('info', 18)}<span>${esc(t('lesson_glossary'))}</span></a>
     </div>
-    ${CATEGORIES.map((c) => `
+    ${recent.length ? `
       <div class="nav-group">
-        <h2 class="nav-cat">${esc(t(c.title))}</h2>
-        ${TOOLS.filter((x) => x.cat === c.id).map((x) => `
-          <a href="#/${x.id}"${x.id === activeId ? ' aria-current="page"' : ''}>${icon(x.icon, 18)}<span>${esc(t(titleKey(x.id)))}</span></a>`).join('')}
-      </div>`).join('')}`;
+        <h2 class="nav-cat">${esc(t('homeRecent'))}</h2>
+        ${recent.map((x) => link(x, false)).join('')}
+      </div>` : ''}
+    ${CATEGORIES.map((c) => {
+      const tools = TOOLS.filter((x) => x.cat === c.id);
+      return `
+      <details class="nav-group" data-cat="${c.id}"${c.id === activeCat || openPref[c.id] ? ' open' : ''}>
+        <summary class="nav-cat"><span>${esc(t(c.title))}</span><span class="nav-count">${tools.length}</span>${icon('down', 14)}</summary>
+        ${tools.map((x) => link(x)).join('')}
+      </details>`;
+    }).join('')}`;
 }
+
+// Remember only what the reader toggles (a click or Enter/Space on the
+// summary), not the automatic opening of the current category.
+navEl.addEventListener('click', (e) => {
+  const group = e.target.closest('summary')?.parentElement;
+  if (!group?.dataset.cat) return;
+  setTimeout(() => setPref('navOpen', { ...(getPref('navOpen') || {}), [group.dataset.cat]: group.open }), 0);
+});
 
 function renderChrome(activeId) {
   renderNav(activeId);
@@ -188,6 +214,7 @@ document.addEventListener('click', (e) => {
 });
 initPaletteShortcuts();
 installZoom();
+initOffline();
 
 // ---- Repository link (derived from the GitHub Pages host) ----
 (function repoLink() {

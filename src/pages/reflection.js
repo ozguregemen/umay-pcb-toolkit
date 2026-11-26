@@ -178,6 +178,6 @@ export default {
         'Γ = (ZL − Z0) / (ZL + Z0)',
         'VSWR = (1 + |Γ|) / (1 − |Γ|)',
         'RL = −20·log10|Γ|        ML = −10·log10(1 − |Γ|²)',
-      ], 'rf_note');
+      ], 'rf_note', ['D. M. Pozar, Microwave Engineering, 4th ed., §2.3', 'R. Ludwig & G. Bogdanov, RF Circuit Design, 2nd ed., ch. 2']);
   },
 };

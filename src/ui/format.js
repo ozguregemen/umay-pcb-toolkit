@@ -1,9 +1,11 @@
 import { locale } from '../i18n.js';
 
 const cache = new Map();
+// No thousands separators: "3.950" (Turkish for 3950) and "3,950" (English)
+// are each read as 3.95 by readers used to the other convention.
 function nf(opts) {
   const key = locale() + JSON.stringify(opts);
-  if (!cache.has(key)) cache.set(key, new Intl.NumberFormat(locale(), opts));
+  if (!cache.has(key)) cache.set(key, new Intl.NumberFormat(locale(), { useGrouping: false, ...opts }));
   return cache.get(key);
 }
 

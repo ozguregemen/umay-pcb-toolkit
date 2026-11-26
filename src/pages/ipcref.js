@@ -155,7 +155,7 @@ const FOIL = [
   ['4 oz', 137.2, 117.5, 139.5, 144.5],
 ];
 
-const nf = (x) => new Intl.NumberFormat(document.documentElement.lang === 'tr' ? 'tr-TR' : 'en-US').format(x);
+const nf = (x) => new Intl.NumberFormat(document.documentElement.lang === 'tr' ? 'tr-TR' : 'en-US', { useGrouping: false }).format(x);
 
 function classTable(headKey, rowsData) {
   const head = `<tr><th scope="col">${esc(t(headKey))}</th>${[1, 2, 3].map((n) => `<th scope="col" data-cls="${n}">${esc(t('ir_class', { n }))}</th>`).join('')}</tr>`;
