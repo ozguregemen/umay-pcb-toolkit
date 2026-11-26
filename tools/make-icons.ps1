@@ -85,45 +85,71 @@ Save-Icon 'icon-maskable-512.png' 512 0 0.66
 # iOS rounds the corners itself and shows transparency as black.
 Save-Icon 'apple-touch-icon.png' 180 0 0.82
 
-# ---- Social preview (Open Graph / GitHub), 1200 x 630 ----
-$c = New-Canvas 1200 630
-$g = $c.G
-$g.Clear($green)
-
-# Decorative routing on the right, in a darker tone so the text stays in front.
-$routes = @(
-  @(@(640, 70), @(840, 70), @(900, 130), @(1140, 130)),
-  @(@(560, 150), @(760, 150), @(820, 210), @(1150, 210)),
-  @(@(900, 290), @(1000, 290), @(1060, 350), @(1150, 350)),
-  @(@(890, 400), @(980, 400), @(1030, 450), @(1150, 450)),
-  @(@(960, 590), @(1060, 590), @(1100, 550), @(1150, 550))
-)
-foreach ($r in $routes) { Add-Trace $g 0 0 1 $r $deep $green 14 15 }
-
-# Icon tile
-$tile = Get-RoundedRect 80 84 132 132 29
-$tileBrush = New-Object System.Drawing.SolidBrush $deep
-$g.FillPath($tileBrush, $tile)
-Add-Trace $g 80 84 (132 / 64) $glyph $orange $deep
-
+# ---- Social images ----
+# assets/social.png (1200 x 630) is the Open Graph image of the site.
+# .github/social-preview.png (1280 x 640) is for the repository card: upload it
+# by hand under Settings > General > Social preview. GitHub asks for an 80 px
+# border free of important content, so its text and icon stay inside it.
 $white = New-Object System.Drawing.SolidBrush $cream
 $muted = New-Object System.Drawing.SolidBrush $soft
 $accent = New-Object System.Drawing.SolidBrush $orange
+$tileBrush = New-Object System.Drawing.SolidBrush $deep
 $title = New-Object System.Drawing.Font 'Segoe UI', 84, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
 $lead = New-Object System.Drawing.Font 'Segoe UI', 38, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
 $small = New-Object System.Drawing.Font 'Segoe UI Semibold', 28, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
-
 # Non-ASCII characters by code, so the script does not depend on its encoding.
 $dot = "  $([char]0xB7)  "
 $turkish = "T$([char]0xFC)rk$([char]0xE7)e"
-$g.DrawString('Umay PCB Toolkit', $title, $white, 72, 250)
-$g.DrawString('Open-source PCB and electronics calculators', $lead, $white, 78, 362)
-$g.DrawString('with lessons for hardware engineers', $lead, $white, 78, 410)
-$g.DrawString((@('IPC-2152 trace width', 'impedance', 'stack-up', 'SI', 'RF', 'power') -join $dot), $small, $accent, 80, 492)
-$g.DrawString((@('Runs in the browser, also offline', "$turkish / English", 'MIT') -join $dot), $small, $muted, 80, 536)
+$topics = @('IPC-2152 trace width', 'impedance', 'stack-up', 'SI', 'RF', 'power') -join $dot
+$facts = @('Runs in the browser, also offline', "$turkish / English", 'MIT') -join $dot
 
-$g.Dispose()
-$c.Bmp.Save((Join-Path $out 'social.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-$c.Bmp.Dispose()
+# layout: Tile = x, y, size of the icon tile; Title/Lead1/Lead2/Line1/Line2 = x, y
+# of each text line (top-left of the string box); Routes = decorative traces.
+function Save-Social([string]$path, [int]$w, [int]$h, $layout) {
+  $c = New-Canvas $w $h
+  $g = $c.G
+  $g.Clear($green)
+  # Decorative routing on the right, in a darker tone so the text stays in front.
+  foreach ($r in $layout.Routes) { Add-Trace $g 0 0 1 $r $deep $green 14 15 }
+  $t = $layout.Tile
+  $tile = Get-RoundedRect $t[0] $t[1] $t[2] $t[2] ([math]::Round($t[2] * 14 / 64))
+  $g.FillPath($tileBrush, $tile)
+  $tile.Dispose()
+  Add-Trace $g $t[0] $t[1] ($t[2] / 64) $glyph $orange $deep
+  $g.DrawString('Umay PCB Toolkit', $title, $white, $layout.Title[0], $layout.Title[1])
+  $g.DrawString('Open-source PCB and electronics calculators', $lead, $white, $layout.Lead1[0], $layout.Lead1[1])
+  $g.DrawString('with lessons for hardware engineers', $lead, $white, $layout.Lead2[0], $layout.Lead2[1])
+  $g.DrawString($topics, $small, $accent, $layout.Line1[0], $layout.Line1[1])
+  $g.DrawString($facts, $small, $muted, $layout.Line2[0], $layout.Line2[1])
+  $g.Dispose()
+  $c.Bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+  $c.Bmp.Dispose()
+}
+
+Save-Social (Join-Path $out 'social.png') 1200 630 @{
+  Tile = @(80, 84, 132)
+  Title = @(72, 250); Lead1 = @(78, 362); Lead2 = @(78, 410); Line1 = @(80, 492); Line2 = @(80, 536)
+  Routes = @(
+    @(@(640, 70), @(840, 70), @(900, 130), @(1140, 130)),
+    @(@(560, 150), @(760, 150), @(820, 210), @(1150, 210)),
+    @(@(900, 290), @(1000, 290), @(1060, 350), @(1150, 350)),
+    @(@(890, 400), @(980, 400), @(1030, 450), @(1150, 450)),
+    @(@(960, 590), @(1060, 590), @(1100, 550), @(1150, 550))
+  )
+}
+
+$card = Join-Path (Split-Path $PSScriptRoot -Parent) '.github\social-preview.png'
+Save-Social $card 1280 640 @{
+  Tile = @(82, 80, 112)
+  Title = @(62, 204); Lead1 = @(74, 318); Lead2 = @(74, 366); Line1 = @(75, 456); Line2 = @(75, 502)
+  Routes = @(
+    @(@(700, 60), @(900, 60), @(960, 120), @(1220, 120)),
+    @(@(600, 150), @(820, 150), @(880, 210), @(1230, 210)),
+    @(@(960, 290), @(1060, 290), @(1120, 350), @(1230, 350)),
+    @(@(950, 400), @(1040, 400), @(1090, 450), @(1230, 450)),
+    @(@(1000, 590), @(1100, 590), @(1140, 550), @(1230, 550))
+  )
+}
 
 Get-ChildItem $out -Filter *.png | ForEach-Object { '{0,-24} {1,8:N0} bytes' -f $_.Name, $_.Length }
+Get-Item $card | ForEach-Object { '{0,-24} {1,8:N0} bytes' -f $_.Name, $_.Length }
