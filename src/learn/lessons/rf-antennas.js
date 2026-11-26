@@ -65,6 +65,12 @@ Antenin empedansı kart üzerinde nadiren tam 50 Ω çıkar. Beslemeye bir **π 
 
 > [!TIP] Ayarı her zaman ürünün son hâlinde yapın: kutu kapalı, pil takılı, kablolar yerinde. Elde tutulan cihazlarda kullanıcının eli de anteni kaydırır.
 
+### Zayıflatıcı (pad) ne işe yarar?
+
+Eşleştirme kayıpsız L ve C ile yapılır; **zayıflatıcı** ise üç dirençten oluşan, sinyali bilerek küçülten ve iki ucunda da 50 Ω gösteren bir ağdır. İki yerde işe yarar: ölçüm cihazının girişini yüksek seviyeden korumak ve kötü eşleşmiş bir yükü kaynaktan yalıtmak. Yansıyan dalga zayıflatıcıdan iki kez geçtiği için A dB’lik bir pad geri dönüş kaybını 2·A dB iyileştirir: S11’i −6 dB olan bir yük, 3 dB’lik padin arkasından −12 dB görünür. Bedeli, gücün yarısının dirençlerde ısıya dönüşmesidir; bu yüzden verici ile anten arasında pad kalıcı bir çözüm değil, bir ölçüm ve yalıtım aracıdır.
+
+[[calc:attenuator?db=3|3 dB’lik π zayıflatıcının dirençlerini hesapla]]
+
 ## NFC ve RFID bobinleri: anten değil, transformatör
 
 [[fig:nfc-coupling]]
@@ -167,6 +173,12 @@ The antenna impedance on a real board is rarely exactly 50 Ω. Leave three pads 
 [[calc:matching|Calculate the π-match values]] [[calc:reflection|Reflection and VSWR calculator]]
 
 > [!TIP] Always tune the final product: enclosure closed, battery fitted, cables in place. For handheld devices the user’s hand detunes the antenna too.
+
+### What is an attenuator (pad) for?
+
+Matching uses lossless L and C; an **attenuator** is a network of three resistors that deliberately reduces the signal while presenting 50 Ω at both ends. It is useful in two places: protecting the input of a test instrument from too high a level, and isolating a poorly matched load from the source. The reflected wave passes through the pad twice, so a pad of A dB improves the return loss by 2·A dB: a load with S11 = −6 dB looks like −12 dB behind a 3 dB pad. The price is that half of the power turns into heat in the resistors, so between a transmitter and its antenna a pad is a measurement and isolation aid, not a permanent fix.
+
+[[calc:attenuator?db=3|Calculate the resistors of a 3 dB π attenuator]]
 
 ## NFC and RFID coils: a transformer, not an antenna
 

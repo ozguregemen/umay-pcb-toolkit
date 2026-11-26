@@ -10,11 +10,15 @@ import { icon } from './ui/icons.js';
 import { esc } from './ui/format.js';
 import { getPref, setPref, pushRecent, onPrefChange } from './prefs.js';
 import { mountLearnIndex, mountLesson, lessonsForTool } from './learn/index.js';
+import { reveal } from './learn/search.js';
+import { favs, listSaved, savedHref } from './saved.js';
+import { decorateTool, mountSaved } from './ui/saved.js';
 
 const main = document.getElementById('main');
 const sidebar = document.getElementById('sidebar');
 const navEl = document.getElementById('nav');
 const pageCache = new Map();
+let navActive = '';
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -24,18 +28,29 @@ function parseHash() {
 
 // With 40+ tools the sidebar would be two screens long, so categories are
 // collapsible: the one holding the current tool is open, the rest follow what
-// the reader opened or closed (remembered), and recently used tools sit on top.
+// the reader opened or closed (remembered); favourites and recently used tools
+// sit on top.
 function renderNav(activeId) {
+  navActive = activeId;
   const cur = (id) => (id === activeId ? ' aria-current="page"' : '');
   const openPref = getPref('navOpen') || {};
   const activeCat = toolById(activeId)?.cat;
   const link = (x, mark = true) => `
     <a href="#/${x.id}"${mark && x.id === activeId ? ' aria-current="page"' : ''}>${icon(x.icon, 18)}<span>${esc(t(titleKey(x.id)))}</span></a>`;
   // Alphabetical, so entries do not jump around on every navigation.
-  const recent = (getPref('recent') || []).slice(0, 4).map(toolById).filter(Boolean)
-    .sort((a, b) => t(titleKey(a.id)).localeCompare(t(titleKey(b.id)), getLang()));
+  const byTitle = (a, b) => t(titleKey(a.id)).localeCompare(t(titleKey(b.id)), getLang());
+  const starred = favs().map(toolById).sort(byTitle);
+  const recent = (getPref('recent') || []).filter((id) => !starred.some((x) => x.id === id)).slice(0, 4)
+    .map(toolById).filter(Boolean).sort(byTitle);
+  const savedCount = listSaved().length;
   navEl.innerHTML = `
     <a class="nav-home" href="#/"${cur('')}>${icon('home', 18)}<span>${esc(t('home'))}</span></a>
+    <a class="nav-home" href="#/saved"${cur('saved')}>${icon('bookmark', 18)}<span>${esc(t('saved_title'))}</span>${savedCount ? `<span class="nav-count">${savedCount}</span>` : ''}</a>
+    ${starred.length ? `
+      <div class="nav-group">
+        <h2 class="nav-cat">${esc(t('favs'))}</h2>
+        ${starred.map((x) => link(x, false)).join('')}
+      </div>` : ''}
     <div class="nav-group">
       <h2 class="nav-cat">${esc(t('catLearn'))}</h2>
       <a href="#/learn"${cur('learn')}>${icon('book', 18)}<span>${esc(t('learn_title'))}</span></a>
@@ -88,8 +103,22 @@ function toolCard(x) {
     </a>`;
 }
 
+function savedCard(x) {
+  return `
+    <a class="card tool" href="${esc(savedHref(x))}">
+      <span class="tool-icon">${icon(toolById(x.tool).icon, 22)}</span>
+      <span class="tool-body">
+        <span class="tool-title">${esc(x.name)}</span>
+        <span class="tool-desc">${esc([x.project, t(titleKey(x.tool)), x.value].filter(Boolean).join(' · '))}</span>
+      </span>
+      <span class="tool-go">${icon('right', 18)}</span>
+    </a>`;
+}
+
 function mountHome(root) {
-  const recent = (getPref('recent') || []).map(toolById).filter(Boolean);
+  const starred = favs().map(toolById);
+  const recent = (getPref('recent') || []).filter((id) => !starred.some((x) => x.id === id)).map(toolById).filter(Boolean);
+  const saved = listSaved();
   root.innerHTML = `
     <section class="home-hero">
       <h1>${esc(t('homeTitle'))}</h1>
@@ -106,6 +135,8 @@ function mountHome(root) {
       </span>
       <span class="btn">${esc(t('learn_homeCta'))}</span>
     </a>
+    ${starred.length ? `<section class="home-section"><h2>${icon('star', 18)} ${esc(t('favs'))}</h2><div class="tools">${starred.map(toolCard).join('')}</div></section>` : ''}
+    ${saved.length ? `<section class="home-section"><h2>${icon('bookmark', 18)} ${esc(t('saved_title'))} <a class="more" href="#/saved">${esc(t('saved_all'))}</a></h2><div class="tools">${saved.slice(0, 3).map(savedCard).join('')}</div></section>` : ''}
     ${recent.length ? `<section class="home-section"><h2>${esc(t('homeRecent'))}</h2><div class="tools">${recent.map(toolCard).join('')}</div></section>` : ''}
     ${CATEGORIES.map((c) => `
       <section class="home-section">
@@ -123,11 +154,15 @@ async function route(keepScroll = false) {
   let activeId = '';
   if (tool) activeId = id;
   else if (isLearn) activeId = id === 'learn/glossary' ? id : 'learn';
+  else if (id === 'saved') activeId = id;
   const token = ++routeToken;
   closeDrawer();
   renderChrome(activeId);
 
-  if (isLearn) {
+  if (id === 'saved') {
+    document.title = `${t('saved_title')} · ${t('appName')}`;
+    mountSaved(main);
+  } else if (isLearn) {
     const lessonId = id.slice('learn/'.length);
     document.title = `${t(lessonId ? `lesson_${lessonId}` : 'learn_title')} · ${t('appName')}`;
     if (lessonId) await mountLesson(main, lessonId);
@@ -159,11 +194,14 @@ async function route(keepScroll = false) {
     page.related = lessonsForTool(id).map((l) => ({ id: l.id, title: t(`lesson_${l.id}`) }));
     if (page.mount) page.mount(main, params);
     else mountCalculator(main, page, params);
+    decorateTool(main, id);
     pushRecent(id);
   }
   if (!keepScroll) {
     window.scrollTo(0, 0);
     if (tool || isLearn) main.focus({ preventScroll: true });
+    // Arriving from a search hit: go to the section and highlight the text.
+    if (isLearn) reveal(main.querySelector('.lesson'), params.get('s'), params.get('q'));
   }
 }
 
@@ -206,7 +244,10 @@ document.getElementById('units-toggle').addEventListener('click', (e) => {
   const b = e.target.closest('[data-u]');
   if (b) setPref('units', b.dataset.u);
 });
-onPrefChange((k) => { if (k === 'units') route(true); });
+onPrefChange((k) => {
+  if (k === 'units') route(true);
+  else if (k === 'favs' || k === 'saved') renderNav(navActive);
+});
 
 // ---- Search ----
 document.addEventListener('click', (e) => {

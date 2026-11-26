@@ -18,7 +18,7 @@ const CALLOUTS = {
   RULE: { cls: 'rule', icon: 'check' },
 };
 
-const slug = (s) => s.toLocaleLowerCase('tr').normalize('NFD').replace(/[̀-ͯ]/g, '')
+export const slug = (s) => s.toLocaleLowerCase('tr').normalize('NFD').replace(/[̀-ͯ]/g, '')
   .replace(/ı/g, 'i').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 function safeUrl(u) {

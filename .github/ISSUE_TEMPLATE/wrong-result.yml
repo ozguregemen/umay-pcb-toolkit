@@ -1,0 +1,35 @@
+name: Yanlış sonuç / Wrong result
+description: Bir hesaplayıcı beklediğinizden farklı bir değer veriyor. / A calculator gives a value you did not expect.
+title: "[Sonuç] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Türkçe ya da İngilizce yazabilirsiniz. / Write in Turkish or English.
+        Hesaplayıcıdaki **Bağlantı** düğmesi girdileri içeren bağlantıyı kopyalar. / The **Link** button in the calculator copies a link that includes the inputs.
+  - type: input
+    id: link
+    attributes:
+      label: Girdileri içeren bağlantı / Link with the inputs
+      placeholder: https://ozguregemen.github.io/umay-pcb-toolkit/#/trace?I=3&dT=10
+    validations:
+      required: true
+  - type: textarea
+    id: got
+    attributes:
+      label: Uygulamanın verdiği sonuç / What the app shows
+      placeholder: "Gereken iz genişliği: 0,971 mm"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Beklenen değer ve kaynağı / Expected value and its source
+      description: Standart, veri sayfası, başka bir araç ya da ölçüm. / A standard, datasheet, another tool or a measurement.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Ek notlar / Anything else

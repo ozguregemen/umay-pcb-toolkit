@@ -1,0 +1,26 @@
+name: Öneri / Suggestion
+description: Yeni bir hesaplayıcı, ders ya da özellik. / A new calculator, lesson or feature.
+title: "[Öneri] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Türkçe ya da İngilizce yazabilirsiniz. / Write in Turkish or English.
+  - type: textarea
+    id: what
+    attributes:
+      label: Ne eklenmeli ya da değişmeli? / What should be added or changed?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Hangi işi kolaylaştırır? / What would it help you do?
+      description: Tasarımın hangi aşamasında, hangi kararı verirken? / At which design step, for which decision?
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Yöntem ve kaynak / Method and source
+      description: Hesaplayıcı önerilerinde formülün alındığı standart, kitap ya da uygulama notu. / For a calculator, the standard, book or application note the formula comes from.

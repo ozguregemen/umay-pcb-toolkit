@@ -8,7 +8,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 | Area | Calculator | Method |
 |---|---|---|
-| Learn | **Learning path** | 18 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
+| Learn | **Learning path** | 19 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, circuit basics, the analog measurement chain from sensor to ADC, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
 | PCB & IPC | **Trace width & current** | IPC-2152 baseline-chart fit with copper, board-thickness and plane modifiers; IPC-2221. Solves width, current or temperature rise; etch factor, plating, current density, AC resistance; DC losses; side-by-side comparison. |
 | | **Conductor spacing** | IPC-2221B Table 6-1 (B1–A7), > 500 V rule, inverse (spacing → voltage), mains-safety warning. |
 | | **Via** | DC resistance, IPC-2221 current capacity, thermal resistance, parallel vias, Johnson L/C, impedance and rise-time degradation. |
@@ -45,7 +45,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 See [docs/karsilastirma.md](docs/karsilastirma.md) for a comparison with Saturn PCB Toolkit, KiCad, Sierra Circuits, Polar, Rogers and others.
 
-Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Turkish/English UI, light/dark theme, mm/mil preference, `Ctrl K` search, mobile layout. After the first visit the whole app works offline (service worker, network first; installable as a PWA). Numbers are shown without thousands separators, so "3950" is never mistaken for 3.95.
+Every result shows its formula, sources and validity warnings, and most calculators draw a live schematic or to-scale cross-section that follows the inputs (click or tap it to enlarge). Inputs live in the URL, so any calculation can be shared as a link, copied as a text summary or printed as a report. Tools can be starred as favourites, and a calculation can be saved under a name and a project and reopened later (kept in the browser; export and import as a JSON file). `Ctrl K` searches the calculators, the text of every lesson, the glossary terms and the saved calculations. Turkish/English UI, light/dark theme, mm/mil preference, mobile layout. After the first visit the whole app works offline (service worker, network first; installable as a PWA). Numbers are shown without thousands separators, so "3950" is never mistaken for 3.95.
 
 See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineering review: what was wrong in earlier versions, the methods used now, how they were validated, and known limitations.
 
@@ -56,10 +56,11 @@ See [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md) for the engineeri
 ```
 index.html              App shell (no build step)
 sw.js                   Service worker: network first, cache as offline fallback
-assets/                 Stylesheet and icon
+assets/                 Stylesheet, icons and the social preview image
 src/app.js              Router (lazy-loads pages), collapsible sidebar, preferences
 src/offline.js          Registers sw.js and fills the offline cache in the background
-src/learn/              Learning path: lesson catalogue, Markdown renderer, lessons, figures
+src/saved.js            Favourites and saved calculations (browser storage, JSON export/import)
+src/learn/              Learning path: lesson catalogue, Markdown renderer, lessons, figures, full-text search
 src/registry.js         Tool catalogue: ids, categories, search keywords
 src/engine/             Pure calculation engine (no DOM) — easy to test and reuse
 src/pages/              One module per calculator: strings (tr/en), fields, compute, render
@@ -67,6 +68,8 @@ src/ui/                 Form framework, formatting, icons, search palette, SVG c
 src/i18n.js             Core Turkish / English strings
 tests/cases/            Engine, diagram and integrity tests (shared by Node and the browser runner)
 docs/                   Engineering notes
+tools/                  Script that draws the PNG icons (not deployed)
+CONTRIBUTING.md         How to report a wrong result and how to add a calculator or lesson
 .github/workflows/      Test + deploy to GitHub Pages
 ```
 
@@ -88,7 +91,7 @@ python -m http.server 8080
 npm test                  # Node ≥ 18, no dependencies
 ```
 
-Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. `tests/cases/integrity.js` checks the catalogue: every tool and lesson has names in both languages, Turkish and English define the same keys, every lesson button opens a calculator with parameters that exist, and every default result cites a source. CI runs the tests on every push and pull request; the site is only deployed when they pass.
+Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagrams.js` renders every calculator diagram (defaults and every mode) and every lesson figure in Turkish and English, and fails on NaN, a thrown error, or a locale-formatted number (Turkish decimal comma) in SVG geometry. `tests/cases/integrity.js` checks the catalogue: every tool and lesson has names in both languages, Turkish and English define the same keys, every lesson button opens a calculator with parameters that exist, and every default result cites a source. `tests/cases/search.js` checks the lesson search (every indexed section is a real anchor on the page) and the validation of saved and imported calculations. CI runs the tests on every push and pull request; the site is only deployed when they pass.
 
 ## Adding a calculator
 
@@ -96,6 +99,8 @@ Or open `/tests/` in the browser. Besides the engine values, `tests/cases/diagra
 2. `tests/cases/<area>.js` — reference values computed by hand, with the arithmetic in a comment.
 3. `src/pages/<name>.js` — `export default { id, strings: { tr, en }, sections, compute, render, diagram? }`; draw diagrams with `src/ui/svg.js` (plain numbers in geometry, display formatters only in labels); see `src/pages/spacing.js` and the field reference at the top of `src/ui/calculator.js`.
 4. Register it in `src/registry.js` and add `tool_<id>` / `tool_<id>_desc` to `src/i18n.js`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules (cited sources, no copyrighted material, both languages) and for adding a lesson.
 
 ## Deploy
 
@@ -105,7 +110,9 @@ GitHub Pages via Actions (**Settings → Pages → Source: GitHub Actions**). Ev
 
 ## Türkçe
 
-Umay PCB Toolkit; IPC kurallarına dayalı PCB hesaplarını (iz genişliği/akım, iletken aralığı, via, pad ve halka, eritme akımı, IPC kural özeti), sinyal bütünlüğü (empedans, temel SI, karışma), güç ve termal (PDN, bağlantı sıcaklığı) ve temel devre araçlarını tarayıcıda sunan açık kaynak bir araçtır. Her sonuçla formülü, kaynağı ve geçerlilik uyarıları gösterilir; girdiler bağlantıda saklanır, özet olarak kopyalanabilir veya rapor olarak yazdırılabilir.
+Umay PCB Toolkit; IPC kurallarına dayalı PCB hesaplarını (iz genişliği/akım, iletken aralığı, via, pad ve halka, eritme akımı, IPC kural özeti), sinyal bütünlüğü (empedans, temel SI, karışma), güç ve termal (PDN, bağlantı sıcaklığı) ve temel devre araçlarını tarayıcıda sunan açık kaynak bir araçtır. Her sonuçla formülü, kaynağı ve geçerlilik uyarıları gösterilir; girdiler bağlantıda saklanır, özet olarak kopyalanabilir veya rapor olarak yazdırılabilir. Araçlar sık kullanılanlara eklenebilir, hesaplar adıyla ve projesiyle kaydedilebilir; arama (`Ctrl K`) hesaplayıcıların yanında ders metinlerini ve sözlük terimlerini de tarar.
+
+Yanlış bir sonuç bildirmek ya da katkıda bulunmak için: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Hesap mantığının denetimi, eski sürümlerdeki hatalar ve kullanılan yöntemler için: [docs/muhendislik-analizi.md](docs/muhendislik-analizi.md).
 

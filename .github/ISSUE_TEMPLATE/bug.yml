@@ -1,0 +1,35 @@
+name: Hata / Bug
+description: Bir şey çalışmıyor ya da yanlış görünüyor. / Something does not work or looks wrong.
+title: "[Hata] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Türkçe ya da İngilizce yazabilirsiniz. / Write in Turkish or English.
+  - type: textarea
+    id: what
+    attributes:
+      label: Ne oldu? / What happened?
+      description: Mümkünse bir ekran görüntüsü ekleyin. / Add a screenshot if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Nasıl tekrarlanır? / Steps to reproduce
+      placeholder: |
+        1. … sayfasını aç / Open the … page
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ne olmasını bekliyordunuz? / What did you expect?
+  - type: input
+    id: where
+    attributes:
+      label: Tarayıcı ve cihaz / Browser and device
+      placeholder: Chrome 130, Windows 11 / Safari, iPhone
+    validations:
+      required: true
