@@ -8,7 +8,7 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 
 | Area | Calculator | Method |
 |---|---|---|
-| Learn | **Learning path** | 20 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, placement and routing strategy, circuit basics, the analog measurement chain from sensor to ADC, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
+| Learn | **Learning path** | 22 lessons for beginners (design flow & IPC, stack-up, traces, spacing, vias, footprints and libraries, setting up design rules in the CAD tool, placement and routing strategy, circuit basics, the analog measurement chain from sensor to ADC, impedance, signal integrity, PCB antennas & NFC coils, PDN, thermal, power-supply layout, grounding & EMC, ESD & protection, schematic review, board bring-up, DFM, glossary) with worked examples that open the calculators, quizzes, figures and progress tracking. |
 | PCB & IPC | **Trace width & current** | IPC-2152 baseline-chart fit with copper, board-thickness and plane modifiers; IPC-2221. Solves width, current or temperature rise; etch factor, plating, current density, AC resistance; DC losses; side-by-side comparison. |
 | | **Conductor spacing** | IPC-2221B Table 6-1 (B1–A7), > 500 V rule, inverse (spacing → voltage), mains-safety warning. |
 | | **Via** | DC resistance, IPC-2221 current capacity, thermal resistance, parallel vias, Johnson L/C, impedance and rise-time degradation. |
@@ -21,9 +21,11 @@ Open-source PCB and electronics calculators for hardware design engineers, based
 | | **Interface design rules** | USB 2.0/3.x, PCIe Gen1–5, SATA, HDMI, MIPI D-PHY, LVDS, Ethernet (MDI, RGMII), DDR3/4/5, CAN, RS-485, I²C/SPI: impedance, skew and group matching, vias, reference planes, AC caps, termination — each value with its source (standards and vendor layout guides); skew ⇄ length converter; opens the impedance calculator with the target. |
 | | **SI basics** | Bandwidth, knee frequency, critical length, wavelength, skin depth, skew. |
 | | **Crosstalk** | Johnson / Brooks NEXT estimate, stripline, length factor, 3W rule, required gap. |
-| Power & thermal | **Power tree and budget** | Source → regulators (LDO, buck, boost, buck-boost, load switch) → loads: current, loss, efficiency and junction temperature of every regulator in a typical and a worst-case scenario, warnings (dropout, overload, wrong topology), a drawing of the tree. |
+| Power & thermal | **Power path voltage drop** | A list of the elements the supply current passes (traces, pours, vias, connector contacts, fuse or MOSFET, cable; feed and return): resistance, drop and loss of each and of the whole path, voltage at the load, drop budget, IPC-2152 temperature rise of traces and IPC-2221 via capacity, drawn as the voltage along the path. |
+| | **Power tree and budget** | Source → regulators (LDO, buck, boost, buck-boost, load switch) → loads: current, loss, efficiency and junction temperature of every regulator in a typical and a worst-case scenario, warnings (dropout, overload, wrong topology), a drawing of the tree. |
 | | **PDN & decoupling** | Target impedance, bulk capacitance, R-L-C capacitor bank impedance plot, plane capacitance. |
 | | **Thermal** | Junction temperature, θ chain, required heatsink, LDO dissipation. |
+| | **Thermal via array and copper area** | Exposed-pad parts: via array in parallel with the laminate, copper area as an annular fin (exact Bessel solution, heat-transfer coefficient as input), junction temperature and the copper area needed; cross-section with the θ chain. |
 | | **Routing between pads** | Traces between BGA/connector pads, diagonal channel, dog-bone via size. |
 | Signal integrity (more) | **Reflection & VSWR**, **RF attenuator** (Pi/T/bridged-T with standard values) | — |
 | RF & antennas | **Planar spiral inductor** | Mohan 1999 (square, hex, octagon, circle), to-scale drawing; NFC/RFID/wireless-power resonance: tuning capacitor, skin-effect AC resistance, coil Q, damping resistor for a target Q. |

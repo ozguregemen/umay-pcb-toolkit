@@ -18,9 +18,11 @@ import { cases as math } from './cases/math.js';
 import { cases as tolerance } from './cases/tolerance.js';
 import { cases as powertree } from './cases/powertree.js';
 import { cases as arith } from './cases/arith.js';
+import { cases as thermalvia } from './cases/thermalvia.js';
+import { cases as dcdrop } from './cases/dcdrop.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
-  ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith,
+  ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith, ...thermalvia, ...dcdrop,
 ];

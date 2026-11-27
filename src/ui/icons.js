@@ -62,6 +62,8 @@ const P = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>',
   tree: '<rect x="3" y="9" width="5" height="6" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="16" y="16" width="5" height="5" rx="1"/><path d="M8 12h4M12 5.5v13M12 5.5h4M12 18.5h4"/>',
+  drop: '<path d="M3 6h6v5h6v5h6"/><path d="M3 20h18" opacity=".4"/><path d="M18 9v4M16.5 11.5 18 13l1.5-1.5"/>',
+  vias: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.6"/><circle cx="16" cy="8" r="1.6"/><circle cx="8" cy="16" r="1.6"/><circle cx="16" cy="16" r="1.6"/><circle cx="12" cy="12" r="1.6"/>',
   star: '<path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.8z"/>',
   bookmark: '<path d="M6 4h12v17l-6-4.5L6 21z"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/>',
