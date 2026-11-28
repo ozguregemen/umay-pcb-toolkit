@@ -81,6 +81,7 @@ const strings = {
     mf_tj: 'Jonksiyon sıcaklığı Tj',
     mf_breakdown: 'Kayıp dağılımı',
     mf_pCond: 'İletim',
+    mf_plotSw: 'Anahtarlama kaybı (açılma + kapanma)',
     mf_pOn: 'Açılma anahtarlaması',
     mf_pOff: 'Kapanma anahtarlaması',
     mf_pCoss: 'Coss boşalması',
@@ -202,6 +203,7 @@ const strings = {
     mf_tj: 'Junction temperature Tj',
     mf_breakdown: 'Loss breakdown',
     mf_pCond: 'Conduction',
+    mf_plotSw: 'Switching loss (turn-on + turn-off)',
     mf_pOn: 'Turn-on switching',
     mf_pOff: 'Turn-off switching',
     mf_pCoss: 'Coss discharge',
@@ -463,6 +465,17 @@ export default {
   diagram,
   id: 'mosfet',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['f', 'i', 'v', 'd', 'irms', 'rds', 'ratio', 'alpha', 'vdrv', 'qg', 'qgd', 'rgx', 'rsrc', 'rsink', 'isrc', 'isink', 'tr', 'tf',
+      'coss', 'qrr', 'td', 'ja', 'jc', 'ca', 'ta'],
+    y: [
+      { key: 'total', label: 'mf_total', unit: 'W', get: (r) => r.total },
+      { key: 'tj', label: 'mf_tj', unit: '°C', get: (r) => r.tj },
+      { key: 'cond', label: 'mf_secCond', unit: 'W', get: (r) => r.parts?.cond },
+      { key: 'sw', label: 'mf_plotSw', unit: 'W', get: (r) => r.psw },
+    ],
+  },
   sections: [
     {
       title: 'mf_secOp',

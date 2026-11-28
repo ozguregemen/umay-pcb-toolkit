@@ -460,6 +460,18 @@ const lenMain = (mm) => (isImperial() ? `${fixed(fromMm(mm, 'mil'), 2)} mil` : `
 export default {
   id: 'impedance',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['w', 's', 'h', 'h2', 'c', 't', 'er', 'Z'],
+    y: [
+      // Analysis: the impedance of the geometry. Synthesis: the width that gives the target.
+      { key: 'zd', label: 'im_zdiff', unit: 'Ω', get: (r) => (r.p?.mode === 'synth' ? NaN : r.zdiff) },
+      { key: 'z0', label: 'im_z0', unit: 'Ω', get: (r) => (r.p?.mode === 'synth' ? NaN : r.z0) },
+      { key: 'w', label: 'im_width', unit: () => (isImperial() ? 'mil' : 'mm'), get: (r) => (r.p?.mode !== 'synth' ? NaN : isImperial() ? fromMm(r.w, 'mil') : r.w) },
+      { key: 'ee', label: 'im_erEff', unit: '', get: (r) => r.erEff },
+      { key: 'td', label: 'im_delay', unit: 'ps/mm', get: (r) => r.delayPsPerMm },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

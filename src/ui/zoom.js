@@ -59,7 +59,8 @@ export function installZoom(root = document) {
   root.addEventListener('click', (e) => {
     const box = e.target.closest('.zoomable');
     if (!box || box.closest('.zoom-dialog')) return;
-    const svgEl = box.querySelector('svg.diagram');
+    // Diagrams and figures, and the line chart of a parameter plot (ui/sweep.js).
+    const svgEl = box.querySelector('svg.diagram, svg.line-chart');
     if (svgEl) openZoom(svgEl);
   });
 }

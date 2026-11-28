@@ -26,10 +26,13 @@ import { cases as stencil } from './cases/stencil.js';
 import { cases as holdup } from './cases/holdup.js';
 import { cases as linkbudget } from './cases/linkbudget.js';
 import { cases as xtalgm } from './cases/xtalgm.js';
+import { cases as nextsteps } from './cases/nextsteps.js';
+import { cases as sweep } from './cases/sweep.js';
+import { cases as fabnotes } from './cases/fabnotes.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
   ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith, ...thermalvia, ...dcdrop,
-  ...termination, ...protection, ...stencil, ...holdup, ...linkbudget, ...xtalgm,
+  ...termination, ...protection, ...stencil, ...holdup, ...linkbudget, ...xtalgm, ...nextsteps, ...sweep, ...fabnotes,
 ];

@@ -467,6 +467,16 @@ const EXAMPLES = {
 export default {
   id: 'stencil',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['t', 'w', 'l', 'd', 'armin', 'asmin'],
+    y: [
+      { key: 'ar', label: 'st_ar', unit: '', get: (r) => r.areaRatio },
+      { key: 'as', label: 'st_as', unit: '', get: (r) => r.aspectRatio },
+      { key: 'vol', label: 'st_vol', unit: 'nl', get: (r) => r.volumeNl },
+      { key: 'tmax', label: 'st_tMax', unit: () => (isImperial() ? 'mil' : 'mm'), get: (r) => (typeof r.tMaxMm !== 'number' ? NaN : isImperial() ? r.tMaxMm / MM_PER_MIL : r.tMaxMm) },
+    ],
+  },
   diagram,
   render,
   sections: [

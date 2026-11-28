@@ -386,6 +386,17 @@ function diagram(v, u, r) {
 export default {
   id: 'trace',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['W', 'I', 'dT', 't', 'bt', 'pd', 'L', 'mg', 'plt', 'amb'],
+    y: [
+      { key: 'w', label: 'tw_width', unit: () => (isImperial() ? 'mil' : 'mm'), get: (r) => (r.mode !== 'width' ? NaN : isImperial() ? r.widthMil : r.widthMil * MM_PER_MIL) },
+      { key: 'i', label: 'tw_current', unit: 'A', get: (r) => (r.mode === 'current' ? r.currentA : NaN) },
+      { key: 'dt', label: 'tw_rise', unit: '°C', get: (r) => (r.mode === 'rise' ? r.deltaTC : NaN) },
+      { key: 'vd', label: 'voltageDrop', unit: 'V', get: (r) => r.dc?.voltageDropV },
+      { key: 'pl', label: 'powerLoss', unit: 'W', get: (r) => r.dc?.powerLossW },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

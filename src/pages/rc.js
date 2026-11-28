@@ -306,6 +306,18 @@ export default {
   diagram,
   id: 'rc',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'tau', label: 'rc_tau', unit: 's', get: (r) => r.tau },
+      { key: 'fc', label: 'rc_fc', unit: 'Hz', get: (r) => r.fc },
+      { key: 'xl', label: 'rc_xl', unit: 'Ω', get: (r) => r.xl },
+      { key: 'xc', label: 'rc_xc', unit: 'Ω', get: (r) => r.xc },
+      { key: 'f0', label: 'rc_f0', unit: 'Hz', get: (r) => r.f0 },
+      { key: 'z0', label: 'rc_z0', unit: 'Ω', get: (r) => r.z0 },
+      { key: 'q', label: 'rc_q', unit: '', get: (r) => r.q },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

@@ -270,6 +270,16 @@ function diagram(v, u, r) {
 export default {
   id: 'via',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'cap', label: 'vi_capTotal', unit: 'A', get: (r) => r.totalCapacityA },
+      { key: 'r', label: 'vi_rTotal', unit: 'Ω', get: (r) => r.totalResistanceOhm },
+      { key: 'rth', label: 'vi_rthTotal', unit: '°C/W', get: (r) => r.totalThermalKW },
+      { key: 'l', label: 'vi_L', unit: 'H', get: (r) => r.inductanceNh * 1e-9 },
+      { key: 'c', label: 'vi_C', unit: 'F', get: (r) => r.parasitics?.capacitancePf * 1e-12 },
+    ],
+  },
   sections: [
     {
       title: 'sectionInputs',

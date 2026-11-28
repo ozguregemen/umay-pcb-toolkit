@@ -307,6 +307,10 @@ select.unit { cursor: pointer; }
 .checks .pass .icon { color: var(--ok-fg); }
 .checks .fail { background: var(--err-bg); border-color: var(--err-bd); }
 .checks .fail .icon { color: var(--err-fg); }
+.checks .warn { background: var(--warn-bg); border-color: var(--warn-bd); }
+.checks .warn .icon { color: var(--warn-fg); }
+/* A text block meant to be read and copied (fabrication notes): long lines wrap. */
+.formula.notes { white-space: pre-wrap; overflow-wrap: anywhere; }
 .checks .na .icon { color: var(--faint); }
 
 /* Tables (reference / spacing) */
@@ -658,6 +662,60 @@ math { font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", "Noto 
 .tol-table td { white-space: nowrap; }
 .tol-bar { width: 34%; min-width: 70px; }
 .tol-bar span { display: block; height: 9px; min-width: 2px; border-radius: 5px; background: var(--accent); }
+
+/* Next steps: where a result is usually taken next */
+.next-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.next-card {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-decoration: none; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; transition: border-color .15s;
+}
+.next-card:hover { border-color: var(--accent); }
+.next-card > .icon:first-child { color: var(--accent); flex: none; }
+.next-card > .icon:last-child { color: var(--muted); flex: none; }
+.next-card > span { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
+.next-card b { font-size: 13.5px; font-weight: 600; }
+.next-card small { font-size: 12.5px; color: var(--faint); }
+@media print { .next-steps { display: none; } }
+
+/* Parameter plots: one output against one input (ui/sweep.js) */
+.plot { border-top: 1px solid var(--border); padding-top: 12px; }
+.plot > summary {
+  cursor: pointer; list-style: none; display: flex; gap: 6px; align-items: center;
+  font-size: 13px; font-weight: 700; letter-spacing: .01em; color: var(--muted);
+}
+.plot > summary::-webkit-details-marker { display: none; }
+.plot > summary::before {
+  content: ""; flex: none; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg); transition: transform .15s;
+}
+.plot[open] > summary::before { transform: rotate(45deg); }
+.plot[open] > summary { margin-bottom: 10px; }
+.plot-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; margin-bottom: 12px; }
+.plot-ctl { display: grid; gap: 4px; min-width: 0; align-content: start; font-size: 12.5px; font-weight: 560; color: var(--muted); }
+.plot-ctl select {
+  width: 100%; min-width: 0; height: 38px; padding: 0 9px; cursor: pointer;
+  border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); color: var(--text);
+  font: 15px/1 system-ui, sans-serif;
+}
+.plot-ctl select:focus { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
+.plot-ctl .unit { min-width: 44px; }
+/* The range fields share one narrow row: they shrink with their column. */
+.plot-ctl .input-group { min-width: 0; }
+.plot-ctl .input-group input { flex: 1; min-width: 0; width: 100%; }
+.plot-fig { margin: 0; }
+.plot-cap { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.plot-fig .chart { max-width: 540px; margin: 0 auto; }
+.line-chart text { font-size: 12px; }
+.line-chart .dot { fill: var(--accent); }
+.line-chart .guide { stroke: var(--focus); stroke-width: 1; stroke-dasharray: 3 3; opacity: .75; }
+.line-chart .marker { fill: var(--surface); stroke: var(--focus); stroke-width: 2.5; }
+.line-chart .marker-label { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.plot-note, .plot-empty { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+/* Enlarged in the zoom dialog, the chart fills the dialog like a diagram does. */
+.zoomable svg.line-chart { cursor: zoom-in; }
+.zoom-body svg.line-chart { display: block; width: 100%; max-width: none; max-height: calc(92vh - 100px); }
+@media (max-width: 480px) { .plot-ctl.wide { grid-column: 1 / -1; } }
+@media print { .plot:not([open]), .plot-controls { display: none; } }
 
 /* Shared small rules */
 .btn:disabled { opacity: .5; cursor: not-allowed; }

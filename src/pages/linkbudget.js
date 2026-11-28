@@ -399,6 +399,17 @@ const EXAMPLES = {
 export default {
   id: 'linkbudget',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['d', 'f', 'ptx', 'gtx', 'grx', 'n', 'lx', 'ltx', 'lrx', 's', 'b', 'nf', 'snr', 'mreq'],
+    y: [
+      { key: 'm', label: 'lb_margin', unit: 'dB', get: (r) => r.marginDb },
+      { key: 'prx', label: 'lb_prx', unit: 'dBm', get: (r) => r.prxDbm },
+      { key: 'fspl', label: 'lb_rFspl', unit: 'dB', get: (r) => (r.model === 'free' ? r.fsplDb : NaN) },
+      { key: 'pl', label: 'lb_rPl', unit: 'dB', get: (r) => (r.model === 'logd' ? r.plDb : NaN) },
+      { key: 'dmax', label: 'lb_rDmax', unit: 'm', get: (r) => r.dMaxM },
+    ],
+  },
   diagram,
   sections: [
     {

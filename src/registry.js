@@ -34,6 +34,8 @@ export const TOOLS = [
     load: () => import('./pages/ipcref.js') },
   { id: 'stackup', cat: 'pcb', icon: 'stackup', keywords: 'stackup katman yığını layer stack prepreg core çekirdek kalınlık thickness simetri symmetry jlcpcb pcbway eurocircuits üretici fab capability kabiliyet',
     load: () => import('./pages/stackup.js') },
+  { id: 'fabnotes', cat: 'pcb', icon: 'notes', keywords: 'üretim notu fabrication notes fab drawing üretici fabricator gerber sipariş order ipc-6012 ipc-a-600 kaplama finish enig hasl lehim maskesi solder mask empedans impedance test',
+    load: () => import('./pages/fabnotes.js') },
   { id: 'impedance', cat: 'si', icon: 'impedance', keywords: 'impedance empedans microstrip stripline cpwg coplanar differential diferansiyel usb ddr 50 90 100 ohm',
     load: () => import('./pages/impedance.js') },
   { id: 'interfaces', cat: 'si', icon: 'plug', keywords: 'usb pcie ddr ethernet hdmi mipi can rs-485 lvds sata arayüz interface kurallar rules diferansiyel differential uzunluk eşleme length matching skew',

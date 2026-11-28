@@ -152,6 +152,15 @@ export default {
   diagram,
   id: 'led',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'r', label: 'led_rExact', unit: 'Ω', get: (r) => r.rExact },
+      { key: 'i', label: 'led_iRec', unit: 'A', get: (r) => r.iRec },
+      { key: 'p', label: 'led_pR', unit: 'W', get: (r) => r.pR },
+      { key: 'eff', label: 'led_eff', unit: '%', get: (r) => r.efficiency * 100 },
+    ],
+  },
   sections: [
     {
       title: 'sectionInputs',

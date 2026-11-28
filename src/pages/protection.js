@@ -812,7 +812,7 @@ function diagram(v, u, r) {
 const note = (html) => `<p class="note">${html}</p>`;
 const cmp = (a, ok, opOk, opBad, b) => `${a} ${ok ? opOk : opBad} ${b}`;
 /** One line of the check list: status 'ok' | 'warn' | 'bad', or null for "not judged". */
-const line = (status, label, detail) => [status === null ? null : status === 'ok', esc(label), esc(detail)];
+const line = (status, label, detail) => [status === null ? null : status === 'ok' ? true : status === 'warn' ? 'warn' : false, esc(label), esc(detail)];
 
 /** Messages under the headline: what fails, what to watch, what passes. */
 function verdicts(errors, warns, oks, vars) {

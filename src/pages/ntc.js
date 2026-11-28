@@ -47,6 +47,7 @@ const strings = {
     nt_advanced: 'Seçenekler',
     nt_series: 'Rs için E-serisi',
     nt_rAt: 'Direnç R({t})',
+    nt_plotR: 'NTC direnci (değerlendirme sıcaklığında)',
     nt_voutAt: 'Çıkış gerilimi',
     nt_codeSub: 'ADC kodu {c}',
     nt_res: 'Sıcaklık çözünürlüğü',
@@ -132,6 +133,7 @@ const strings = {
     nt_advanced: 'Options',
     nt_series: 'E-series for Rs',
     nt_rAt: 'Resistance R({t})',
+    nt_plotR: 'NTC resistance (at the evaluation temperature)',
     nt_voutAt: 'Output voltage',
     nt_codeSub: 'ADC code {c}',
     nt_res: 'Temperature resolution',
@@ -350,6 +352,16 @@ export default {
   diagram,
   id: 'ntc',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['tx', 'r25', 'b', 'vref', 'rs', 'bits', 'delta', 'tlo', 'thi'],
+    y: [
+      { key: 'vout', label: 'nt_voutAt', unit: 'V', get: (r) => r.pt?.vout },
+      { key: 'r', label: 'nt_plotR', unit: 'Ω', get: (r) => r.pt?.r },
+      { key: 'res', label: 'nt_res', unit: '°C', get: (r) => r.pt?.degPerLsb },
+      { key: 'heat', label: 'nt_dT', unit: '°C', get: (r) => r.pt?.selfHeat },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

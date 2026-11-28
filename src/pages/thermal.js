@@ -148,6 +148,15 @@ export default {
   diagram,
   id: 'thermal',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'tj', label: 'th_tj', unit: '°C', get: (r) => r.tj },
+      { key: 'margin', label: 'th_margin', unit: '°C', get: (r) => r.margin },
+      { key: 'pmax', label: 'th_maxP', unit: 'W', get: (r) => r.maxPower },
+      { key: 'p', label: 'th_power', unit: 'W', get: (r) => r.powerW },
+    ],
+  },
   sections: [
     {
       title: 'th_psrc',

@@ -3,11 +3,13 @@
 
 import { t } from '../i18n.js';
 import { esc, unitLabel, fmt } from './format.js';
-import { isImperial, getPref } from '../prefs.js';
+import { isImperial, getPref, setPref } from '../prefs.js';
 import { fromMm } from '../engine/units.js';
 import { icon } from './icons.js';
 import { addZoomButtons } from './zoom.js';
 import { tex, texPlain } from './math.js';
+import { nextStepsHtml } from './nextsteps.js';
+import { newPlotSel, setPlotChoice, plotBlock, plotBody, plotOut } from './sweep.js';
 
 /*
  Field definitions
@@ -291,10 +293,16 @@ function actionButton(action, iconName, labelKey, titleKey) {
 /**
  * Mount a calculator page into `root`.
  * page: { id, sections, compute(v, units), render(result, v, units),
- *         diagram?(v, units, result) — result is undefined while inputs are invalid, intro? }
+ *         diagram?(v, units, result) — result is undefined while inputs are invalid, intro?,
+ *         plot? — outputs that can be drawn against one input, see ui/sweep.js }
  */
 export function mountCalculator(root, page, params) {
   let state = initialState(page, params);
+  // Parameter plot: the reader's choices (kept while the page is open, never
+  // written to the URL) and the latest valid result the plot is drawn from.
+  let plotSel = newPlotSel();
+  let plotFrom = null;
+  const plotCtx = () => ({ page, ...plotFrom, sel: plotSel, parse: parseNumber });
 
   root.innerHTML = `
     <header class="page-head">
@@ -389,6 +397,14 @@ export function mountCalculator(root, page, params) {
       if (anchor) anchor.insertAdjacentHTML('afterend', diagram);
       else result.insertAdjacentHTML('afterbegin', diagram);
       addZoomButtons(result.querySelector('.diagram-wrap'));
+    }
+    // Plot of one output against one input, under the page's own blocks. It is
+    // rebuilt with the result; while it is closed nothing is computed.
+    plotFrom = page.plot && !invalid && res && res.ok !== false ? { v, units: { ...state.units }, res } : null;
+    if (plotFrom) result.insertAdjacentHTML('beforeend', plotBlock(plotCtx(), getPref('plotOpen') === true));
+    // Where this result is usually taken next (links listed in src/nextsteps.js).
+    if (!invalid && res && res.ok !== false) {
+      result.insertAdjacentHTML('beforeend', nextStepsHtml(page.id, res, v, state.units));
     }
     const hero = result.querySelector('.hero');
     peek.querySelector('.peek-label').textContent = hero?.querySelector('.hero-label')?.textContent ?? '';
@@ -505,6 +521,34 @@ export function mountCalculator(root, page, params) {
   result.addEventListener('mouseover', (e) => mark(e, true));
   result.addEventListener('mouseout', (e) => mark(e, false));
 
+  // Plot controls sit in the result, outside the form, and never call
+  // update(): a range end or the output redraws the chart area only, so the
+  // input being typed in stays in the document with its focus and caret.
+  // Choosing another input also changes the range fields, so the block's
+  // content is rebuilt and focus is put back on that select.
+  result.addEventListener('input', (e) => {
+    const el = e.target.closest?.('[data-plot]');
+    const body = el?.closest('.plot-body');
+    if (!body || !plotFrom) return;
+    setPlotChoice(plotSel, el.dataset.plot, el.value);
+    if (el.dataset.plot === 'x') {
+      body.innerHTML = plotBody(plotCtx());
+      body.querySelector('[data-plot="x"]')?.focus();
+    } else {
+      const out = body.querySelector('.plot-out');
+      if (out) out.innerHTML = plotOut(plotCtx());
+    }
+  });
+  // Open / closed is remembered like the calculation steps (the block is
+  // redrawn with every result); the chart is first computed when it is opened.
+  result.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d.matches?.('details.plot')) return;
+    if ((getPref('plotOpen') === true) !== d.open) setPref('plotOpen', d.open);
+    const body = d.querySelector('.plot-body');
+    if (d.open && plotFrom && body && !body.firstElementChild) body.innerHTML = plotBody(plotCtx());
+  }, true);
+
   result.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-copy]');
     if (!btn) return;
@@ -520,6 +564,7 @@ export function mountCalculator(root, page, params) {
     switch (btn.dataset.action) {
       case 'reset':
         state = initialState(page, new URLSearchParams());
+        plotSel = newPlotSel();
         drawForm();
         update();
         break;
@@ -658,7 +703,9 @@ export function invalid(errors) {
 
 /** Pass/fail badge row used by rule checks. */
 export function checks(items) {
+  // ok: true = passes, false = fails, 'warn' = passes with a caution, null = not applicable.
+  const look = (ok) => (ok === null ? ['na', 'dash'] : ok === 'warn' ? ['warn', 'alert'] : ok ? ['pass', 'check'] : ['fail', 'x']);
   return `<ul class="checks">${items.filter(Boolean).map(([ok, labelHtml, detail]) => `
-    <li class="${ok === null ? 'na' : ok ? 'pass' : 'fail'}">${icon(ok === null ? 'dash' : ok ? 'check' : 'x', 16)}
+    <li class="${look(ok)[0]}">${icon(look(ok)[1], 16)}
       <span><b>${labelHtml}</b>${detail ? `<small>${detail}</small>` : ''}</span></li>`).join('')}</ul>`;
 }

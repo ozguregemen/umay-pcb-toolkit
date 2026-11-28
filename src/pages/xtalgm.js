@@ -352,6 +352,15 @@ const EXAMPLES = {
 export default {
   id: 'xtalgm',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['cl', 'esr', 'f', 'c0', 'cs', 'gm', 'gcm', 'rext'],
+    y: [
+      { key: 'gmcrit', label: 'xg_gmcrit', unit: 'A/V', get: (r) => r.gmCrit },
+      { key: 'margin', label: 'xg_margin', unit: '', get: (r) => r.gainMargin },
+      { key: 'esrmax', label: 'xg_rEsrMax', unit: 'Ω', get: (r) => r.esrMax },
+    ],
+  },
   diagram,
   sections: [
     {

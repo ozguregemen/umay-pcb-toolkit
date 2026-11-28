@@ -195,6 +195,15 @@ export default {
   diagram,
   id: 'dcdc',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'l', label: 'dc_L', unit: 'H', get: (r) => r.L },
+      { key: 'cout', label: 'dc_Cout', unit: 'F', get: (r) => r.cOutMin },
+      { key: 'ipk', label: 'dc_ipk', unit: 'A', get: (r) => r.iPeak },
+      { key: 'duty', label: 'dc_duty', unit: '%', get: (r) => r.duty * 100 },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

@@ -970,6 +970,21 @@ const EXAMPLES = {
 export default {
   id: 'termination',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'rs', label: 'tn_rsExact', unit: 'Ω', get: (r) => r.rsExact },
+      { key: 'v1', label: 'tn_v1', unit: 'V', get: (r) => r.v1 },
+      { key: 'prt', label: 'tn_pRt', unit: 'W', get: (r) => r.pRt },
+      { key: 'pnet', label: 'tn_pNet', unit: 'W', get: (r) => r.pAvg },
+      { key: 'idrv', label: 'tn_iDrv', unit: 'A', get: (r) => r.iDrive },
+      { key: 'cmin', label: 'tn_cMin', unit: 'F', get: (r) => r.cMinF },
+      { key: 'setup', label: 'tn_setup', unit: 's', get: (r) => r.setupS },
+      { key: 'hold', label: 'tn_hold', unit: 's', get: (r) => r.holdS },
+      { key: 'fmax', label: 'tn_fmax', unit: 'Hz', get: (r) => r.fMaxHz },
+      { key: 'td', label: 'tn_td', unit: 's', get: (r) => r.line?.tdS },
+    ],
+  },
   diagram,
   sections: [
     {

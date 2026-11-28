@@ -67,6 +67,7 @@ const strings = {
     shn_eOff: 'Ofset Vos / (I·R)',
     shn_eQ: 'Nicemleme ±½ LSB',
     shn_eWc: 'En kötü durum (toplam)',
+    shn_plotErr: 'En kötü durum hatası (Imax’ta)',
     shn_eRss: 'İstatistiksel (RSS)',
     shn_kelvin: 'Kelvin (4 telli) bağlantı: ölçüm izlerini şönt pedlerinin iç kenarından ayrı bir çift olarak çıkarın ve yükseltece yan yana götürün. Akım taşıyan bakırın ve lehimin direnci (1 mΩ civarı olabilir) bu sayede ölçüme girmez. Mümkünse dört uçlu şönt kullanın ve yükseltecin girişine küçük bir RC filtre ekleyin.',
     shn_note: 'Şönt değeri, hesaplanan değerin altındaki ilk yaygın değere yuvarlanır; böylece Imax’ta tam ölçek aşılmaz. Ofset hatası küçük akımlarda büyür; bu yüzden tablo Imax/10’daki hatayı da gösterir. Şönt ısındıkça direnci TCR ile değişir.',
@@ -151,6 +152,7 @@ const strings = {
     shn_eOff: 'Offset Vos / (I·R)',
     shn_eQ: 'Quantisation ±½ LSB',
     shn_eWc: 'Worst case (sum)',
+    shn_plotErr: 'Worst-case error (at Imax)',
     shn_eRss: 'Statistical (RSS)',
     shn_kelvin: 'Kelvin (4-wire) connection: take the sense traces from the inner edge of the shunt pads as a separate pair and route them side by side to the amplifier. That keeps the resistance of the current-carrying copper and solder (which can be around 1 mΩ) out of the measurement. Prefer a four-terminal shunt and add a small RC filter at the amplifier input.',
     shn_note: 'The shunt is rounded down to the first common value below the calculated one, so full scale is not exceeded at Imax. Offset error grows at small currents, which is why the table also shows the error at Imax/10. As the shunt heats up, its resistance changes by the TCR.',
@@ -253,6 +255,15 @@ export default {
   diagram,
   id: 'shunt',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'r', label: 'shn_r', unit: 'Ω', get: (r) => r.r },
+      { key: 'p', label: 'shn_p', unit: 'W', get: (r) => r.p },
+      { key: 'lsb', label: 'shn_lsb', unit: 'A', get: (r) => r.lsbCurrent },
+      { key: 'err', label: 'shn_plotErr', unit: '%', get: (r) => r.errFull?.wc },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

@@ -412,6 +412,16 @@ const hcForced = (v) => Math.round(laminarPlateH(v, 0.05));
 export default {
   id: 'thermalvia',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['n', 'A', 'P', 'd', 'tp', 'h', 'pw', 'pl', 't', 'hc', 'kb', 'kf', 'jc', 'ta'],
+    y: [
+      { key: 'tj', label: 'tv_tj', unit: '°C', get: (r) => r.tjC },
+      { key: 'rja', label: 'tv_rJa', unit: '°C/W', get: (r) => r.thetaJaKW },
+      { key: 'rpb', label: 'tv_rPb', unit: '°C/W', get: (r) => r.thetaPbKW },
+      { key: 'pmax', label: 'tv_pMax', unit: 'W', get: (r) => r.maxPowerW },
+    ],
+  },
   sections: [
     {
       title: 'tv_secPart',

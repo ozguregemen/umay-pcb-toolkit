@@ -245,6 +245,16 @@ export default {
   diagram,
   id: 'i2c',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['len', 'n', 'pinc', 'cpl', 'cx', 'cbd', 'vdd'],
+    y: [
+      { key: 'rmax', label: 'ic_rpMaxRise', unit: 'Ω', get: (r) => r.rpMaxRise },
+      { key: 'rmin', label: 'ic_rpMin', unit: 'Ω', get: (r) => r.rpMin },
+      { key: 'tr', label: 'ic_tr', unit: 's', get: (r) => r.rec?.tr },
+      { key: 'cb', label: 'ic_cbTotal', unit: 'F', get: (r) => r.cb },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

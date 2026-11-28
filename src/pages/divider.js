@@ -51,6 +51,7 @@ const strings = {
     dv_r2Std: 'R2',
     dv_voutStd: 'Elde edilen çıkış',
     dv_error: 'Hata',
+    dv_plotErr: 'Çıkış hatası (hedefe göre)',
     dv_sum: 'Toplam R1 + R2',
     dv_target: 'hedef',
     dv_details: 'Ayrıntılar',
@@ -115,6 +116,7 @@ const strings = {
     dv_r2Std: 'R2',
     dv_voutStd: 'Resulting output',
     dv_error: 'Error',
+    dv_plotErr: 'Output error (against the target)',
     dv_sum: 'Total R1 + R2',
     dv_target: 'target',
     dv_details: 'Details',
@@ -296,6 +298,16 @@ export default {
   diagram,
   id: 'divider',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['r1', 'r2', 'vin', 'rl', 'vref', 'vout', 'rt', 'r2fb'],
+    y: [
+      { key: 'vout', label: 'dv_voutStd', unit: 'V', get: (r) => (r.mode === 'design' ? r.voutStd : r.vout) },
+      { key: 'err', label: 'dv_plotErr', unit: '%', get: (r) => r.errorPct },
+      { key: 'i', label: 'dv_current', unit: 'A', get: (r) => r.iDivider ?? r.current },
+      { key: 'rth', label: 'dv_rth', unit: 'Ω', get: (r) => r.rth },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

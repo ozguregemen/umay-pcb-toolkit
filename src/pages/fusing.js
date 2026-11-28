@@ -228,6 +228,15 @@ export default {
   diagram,
   id: 'fusing',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    y: [
+      { key: 'i', label: 'fu_onderdonk', unit: 'A', get: (r) => r.onderdonkA },
+      { key: 't', label: 'fu_time', unit: 's', get: (r) => r.timeS },
+      { key: 'pre', label: 'fu_preece', unit: 'A', get: (r) => r.preeceA },
+      { key: 'i2t', label: 'fu_i2t', unit: 'A²s', si: true, get: (r) => r.i2t },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',

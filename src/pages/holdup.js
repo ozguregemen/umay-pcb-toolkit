@@ -415,6 +415,16 @@ const EXAMPLES = {
 export default {
   id: 'holdup',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['t', 'c', 'p', 'i', 'v1', 'v2', 'eff', 'cmin', 'esr'],
+    y: [
+      { key: 'c', label: 'hu_cReq', unit: 'F', get: (r) => r.cReqF },
+      { key: 't', label: 'hu_tMin', unit: 's', get: (r) => r.tMinS },
+      { key: 'iend', label: 'hu_iEnd', unit: 'A', get: (r) => r.iEndA },
+      { key: 'e', label: 'hu_eStored', unit: 'J', get: (r) => r.eStoredJ },
+    ],
+  },
   diagram,
   render,
   sections: [

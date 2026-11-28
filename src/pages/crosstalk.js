@@ -31,6 +31,7 @@ const strings = {
     xt_target: 'Hedef karışma',
     xt_result: 'Yakın uç karışma (NEXT) tahmini',
     xt_db: 'Desibel olarak',
+    xt_plotDb: 'Yakın uç karışma (dB)',
     xt_D: 'Merkezden merkeze mesafe (D)',
     xt_H: 'Etkin yükseklik (H)',
     xt_dh: 'D / H',
@@ -68,6 +69,7 @@ const strings = {
     xt_target: 'Target crosstalk',
     xt_result: 'Near-end crosstalk (NEXT) estimate',
     xt_db: 'In decibels',
+    xt_plotDb: 'Near-end crosstalk (dB)',
     xt_D: 'Centre-to-centre distance (D)',
     xt_H: 'Effective height (H)',
     xt_dh: 'D / H',
@@ -212,6 +214,16 @@ export default {
   diagram,
   id: 'crosstalk',
   strings,
+  // Parameter plot (ui/sweep.js): results that can be drawn against one input.
+  plot: {
+    x: ['s', 'h', 'h2', 'w', 'L', 'tr', 'er', 'k', 'V', 'tg'],
+    y: [
+      { key: 'x', label: 'xt_result', unit: '%', get: (r) => r.fraction * 100 },
+      { key: 'db', label: 'xt_plotDb', unit: 'dB', get: (r) => r.db },
+      { key: 'v', label: 'xt_noise', unit: 'V', get: (r) => r.noiseV },
+      { key: 'gap', label: 'xt_required', unit: () => (isImperial() ? 'mil' : 'mm'), get: (r) => (typeof r.requiredGapMm !== 'number' ? NaN : isImperial() ? fromMm(r.requiredGapMm, 'mil') : r.requiredGapMm) },
+    ],
+  },
   sections: [
     {
       title: 'sectionSetup',
