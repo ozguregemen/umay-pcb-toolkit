@@ -49,7 +49,7 @@ const strings = {
     pi_dgTune: 'Rezonans ayar devresi',
     err_turns: 'Sarım sayısı en az 1 olmalı.',
     err_width: 'Genişlik sıfırdan büyük olmalı.',
-    err_space: 'Boşluk sıfırdan büyük olmalı.',
+    err_space: 'Aralık sıfırdan büyük olmalı.',
     err_outer: 'Dış çap sıfırdan büyük olmalı.',
     err_tooManyTurns: 'Bu dış çapa bu kadar sarım sığmıyor (iç çap ≤ 0).',
     warn_fillLow: 'Doluluk oranı çok düşük; formüllerin doğruluğu azalır.',

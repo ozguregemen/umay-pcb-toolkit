@@ -412,8 +412,9 @@ export default {
       ])) : '')
       + (v.scale !== 'none' ? block('ad_scaleTitle', rows([
         ['ad_k', fmt(r.k, 4)],
-        ['ad_fsQ', r.bipolar ? `±${qty(r.fsQ, v)}` : qty(r.fsQ, v)],
-        ['ad_resQ', qty(r.resQ, v), true],
+        // qty() carries the free-text unit the user typed: escape it like every other user text.
+        ['ad_fsQ', esc(r.bipolar ? `±${qty(r.fsQ, v)}` : qty(r.fsQ, v))],
+        ['ad_resQ', esc(qty(r.resQ, v)), true],
         v.scale === 'div' && ['ad_vAdcMax', si(r.vAdcMax, 'V')],
         v.scale === 'div' && ['ad_use', pct(r.use)],
         v.scale === 'div' && ['ad_rth', si(r.rth, 'Ω')],
@@ -422,7 +423,7 @@ export default {
       + (r.x ? block('ad_xTitle', rows([
         v.scale !== 'none' && ['ad_vAdc', si(r.x.vAdc, 'V', 5)],
         ['ad_code', `${intFmt(r.x.code)}${hex(r.x.code)}`, true],
-        ['ad_back', qty(r.x.back, v, 5)],
+        ['ad_back', esc(qty(r.x.back, v, 5))],
         ['ad_err', si(r.x.err, 'V', 3)],
       ])) : '');
   },

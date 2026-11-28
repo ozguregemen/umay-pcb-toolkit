@@ -6,7 +6,7 @@
 export const LN2 = Math.log(2); // 0.693
 
 export function astable(r1, r2, c) {
-  if (!(r1 > 0) || !(r2 > 0) || !(c > 0)) return { ok: false, errors: ['values'] };
+  if (!(r1 > 0) || !(r2 > 0) || !(c > 0)) return { ok: false, errors: ['tm_values'] };
   const tHigh = LN2 * (r1 + r2) * c;
   const tLow = LN2 * r2 * c;
   const period = tHigh + tLow;
@@ -15,7 +15,7 @@ export function astable(r1, r2, c) {
 
 /** Resistors for a target frequency and duty (> 50 %) with a chosen C. */
 export function astableDesign(f, duty, c) {
-  if (!(f > 0) || !(c > 0)) return { ok: false, errors: ['values'] };
+  if (!(f > 0) || !(c > 0)) return { ok: false, errors: ['tm_values'] };
   if (!(duty > 0.5 && duty < 1)) return { ok: false, errors: ['duty'] };
   const period = 1 / f;
   const tLow = period * (1 - duty);
@@ -27,6 +27,6 @@ export function astableDesign(f, duty, c) {
 }
 
 export function monostable(r, c) {
-  if (!(r > 0) || !(c > 0)) return { ok: false, errors: ['values'] };
+  if (!(r > 0) || !(c > 0)) return { ok: false, errors: ['tm_values'] };
   return { ok: true, t: 1.1 * r * c };
 }

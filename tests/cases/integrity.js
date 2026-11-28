@@ -73,6 +73,23 @@ export const cases = [
     report(problems);
   }],
 
+  // Page strings are merged into one dictionary when a page loads: a key that
+  // two pages define differently shows the wrong text on whichever loaded first.
+  ['i18n: no two pages define the same string key with different text', () => {
+    const problems = [];
+    for (const lang of ['tr', 'en']) {
+      const owner = new Map();
+      for (const [id, page] of pageById) {
+        for (const [key, text] of Object.entries(page.strings?.[lang] ?? {})) {
+          const prev = owner.get(key);
+          if (prev && prev.text !== text) problems.push(`${lang}: "${key}" differs between ${prev.id} and ${id}`);
+          else if (!prev) owner.set(key, { id, text });
+        }
+      }
+    }
+    report(problems);
+  }],
+
   ['i18n: Turkish and English define the same keys', () => {
     const tr = Object.keys(dictionaries.tr);
     const en = new Set(Object.keys(dictionaries.en));
