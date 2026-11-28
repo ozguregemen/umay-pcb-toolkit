@@ -20,9 +20,12 @@ import { cases as powertree } from './cases/powertree.js';
 import { cases as arith } from './cases/arith.js';
 import { cases as thermalvia } from './cases/thermalvia.js';
 import { cases as dcdrop } from './cases/dcdrop.js';
+import { cases as termination } from './cases/termination.js';
+import { cases as protection } from './cases/protection.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
   ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith, ...thermalvia, ...dcdrop,
+  ...termination, ...protection,
 ];

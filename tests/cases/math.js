@@ -21,6 +21,22 @@ for (const tool of TOOLS) {
 const fieldsOf = (page) => page.sections.flatMap((s) => s.fields);
 
 /** Default inputs, plus one variant per option of every choice/select (with its `set` values). */
+/** Matches anything that looks like one of the page's own string keys (tn_…, warn_tn_…). */
+const keyPatterns = new Map();
+function rawKeyPattern(page) {
+  if (!keyPatterns.has(page.id)) {
+    const prefixes = new Set();
+    for (const key of Object.keys(page.strings?.en ?? {})) {
+      const m = /^(?:ok_|warn_|err_)?([a-z0-9]{2,})_/.exec(key);
+      if (m) prefixes.add(m[1]);
+    }
+    keyPatterns.set(page.id, prefixes.size
+      ? new RegExp(`(?<![A-Za-z0-9_])(?:ok_|warn_|err_)?(?:${[...prefixes].join('|')})_[A-Za-z0-9]+(?![A-Za-z0-9_])`, 'g')
+      : /(?!)/g);
+  }
+  return keyPatterns.get(page.id);
+}
+
 function variants(page) {
   const raw0 = {};
   const units0 = {};
@@ -110,6 +126,9 @@ export const cases = [
             const where = `${page.id} [${label}] (${lang})`;
             let html;
             try { html = page.render(page.compute(v, units), v, units); } catch (e) { problems.push(`${where}: ${e.message}`); continue; }
+            // A key without a string is shown as it is: it must not appear in the visible text.
+            const rawKeys = html.replace(/<[^>]*>/g, ' ').match(rawKeyPattern(page));
+            if (rawKeys) problems.push(`${where}: untranslated key ${[...new Set(rawKeys)].slice(0, 3).join(', ')}`);
             if (!html.includes('class="block steps"')) continue;
             any = true;
             const block = html.split('class="block steps"')[1].split('</details>')[0];
