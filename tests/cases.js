@@ -29,10 +29,14 @@ import { cases as xtalgm } from './cases/xtalgm.js';
 import { cases as nextsteps } from './cases/nextsteps.js';
 import { cases as sweep } from './cases/sweep.js';
 import { cases as fabnotes } from './cases/fabnotes.js';
+import { cases as report } from './cases/report.js';
+import { cases as panel } from './cases/panel.js';
+import { cases as cable } from './cases/cable.js';
+import { cases as kicadrules } from './cases/kicadrules.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
   ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith, ...thermalvia, ...dcdrop,
-  ...termination, ...protection, ...stencil, ...holdup, ...linkbudget, ...xtalgm, ...nextsteps, ...sweep, ...fabnotes,
+  ...termination, ...protection, ...stencil, ...holdup, ...linkbudget, ...xtalgm, ...nextsteps, ...sweep, ...fabnotes, ...report, ...panel, ...cable, ...kicadrules,
 ];

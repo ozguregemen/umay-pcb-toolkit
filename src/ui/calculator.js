@@ -110,6 +110,58 @@ function fieldError(f, text, n) {
 
 const isVisible = (x, v) => !(x.show && !x.show(v));
 
+/** Validation errors of the visible number fields: field key → [message key, vars]. */
+function inputErrors(page, state, v) {
+  const errors = new Map();
+  for (const s of page.sections) {
+    if (!isVisible(s, v)) continue;
+    for (const f of s.fields) {
+      if (f.type !== 'number' || !isVisible(f, v)) continue;
+      const e = fieldError(f, state.raw[f.key], v[f.key]);
+      if (e) errors.set(f.key, e);
+    }
+  }
+  return errors;
+}
+
+const invalidHtml = () => `<p class="msg-empty">${icon('alert', 18)} ${esc(t('inputsInvalid'))}</p>`;
+
+/**
+ * One set of values computed and rendered: the result object, the page's own
+ * blocks as HTML and, apart from them, the diagram (placeDiagram puts it in).
+ * With invalid inputs nothing is computed.
+ */
+function resultParts(page, v, units, invalid) {
+  // Diagrams receive the result too (undefined while inputs are invalid) so
+  // they can draw live values; a failing diagram never breaks the page.
+  const res = invalid ? undefined : page.compute(v, units);
+  let diagram = '';
+  if (page.diagram) {
+    try {
+      const svg = page.diagram(v, units, res?.ok === false ? undefined : res);
+      if (svg) diagram = `<div class="diagram-wrap">${svg}</div>`;
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  return { res, html: invalid ? invalidHtml() : page.render(res, v, units), diagram };
+}
+
+/**
+ * Put the diagram into a result element. The answer comes first: the diagram
+ * goes after the headline values and their warnings, before the detail tables.
+ */
+export function placeDiagram(result, diagram) {
+  if (!diagram) return;
+  let anchor = null;
+  for (const el of result.children) {
+    if (el.matches('.heroes, .hero, .msg, .msg-empty')) anchor = el; else break;
+  }
+  if (anchor) anchor.insertAdjacentHTML('afterend', diagram);
+  else result.insertAdjacentHTML('afterbegin', diagram);
+  addZoomButtons(result.querySelector('.diagram-wrap'));
+}
+
 function infoButton(id, f) {
   if (!f.info) return '';
   return `<button type="button" class="info-btn" aria-expanded="false" aria-controls="${id}-info" title="${esc(t('moreInfo'))}">${icon('info', 15)}<span class="sr">${esc(t('moreInfo'))}</span></button>`;
@@ -346,7 +398,8 @@ export function mountCalculator(root, page, params) {
 
   const update = () => {
     const v = values(page, state);
-    let invalid = 0;
+    const errors = inputErrors(page, state, v);
+    const invalid = errors.size;
     page.sections.forEach((s, i) => {
       const sVisible = isVisible(s, v);
       const sEl = form.querySelector(`[data-section="${i}"]`);
@@ -363,41 +416,19 @@ export function mountCalculator(root, page, params) {
         if (f.type !== 'number') continue;
         const input = fe.querySelector('input');
         const errEl = fe.querySelector('.field-error');
-        const e = visible ? fieldError(f, state.raw[f.key], v[f.key]) : null;
+        // Only visible number fields have an entry (see inputErrors).
+        const e = (visible && errors.get(f.key)) || null;
         input.toggleAttribute('aria-invalid', !!e);
         errEl.hidden = !e;
         errEl.textContent = e ? t(e[0], e[1]) : '';
-        if (e) invalid++;
         // Optional & empty → NaN so compute can skip it.
       }
     });
 
-    // Diagrams receive the result too (undefined while inputs are invalid) so
-    // they can draw live values; a failing diagram never breaks the page.
-    const res = invalid ? undefined : page.compute(v, state.units);
-    let diagram = '';
-    if (page.diagram) {
-      try {
-        const svg = page.diagram(v, state.units, res?.ok === false ? undefined : res);
-        if (svg) diagram = `<div class="diagram-wrap">${svg}</div>`;
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    // The answer comes first: the diagram goes after the headline values and
-    // their warnings, before the detail tables.
-    result.innerHTML = invalid
-      ? `<p class="msg-empty">${icon('alert', 18)} ${esc(t('inputsInvalid'))}</p>`
-      : page.render(res, v, state.units);
-    if (diagram) {
-      let anchor = null;
-      for (const el of result.children) {
-        if (el.matches('.heroes, .hero, .msg, .msg-empty')) anchor = el; else break;
-      }
-      if (anchor) anchor.insertAdjacentHTML('afterend', diagram);
-      else result.insertAdjacentHTML('afterbegin', diagram);
-      addZoomButtons(result.querySelector('.diagram-wrap'));
-    }
+    // Compute, render, then the diagram (shared with renderStatic below).
+    const { res, html, diagram } = resultParts(page, v, state.units, invalid);
+    result.innerHTML = html;
+    placeDiagram(result, diagram);
     // Plot of one output against one input, under the page's own blocks. It is
     // rebuilt with the result; while it is closed nothing is computed.
     plotFrom = page.plot && !invalid && res && res.ok !== false ? { v, units: { ...state.units }, res } : null;
@@ -594,6 +625,114 @@ export function mountCalculator(root, page, params) {
 
   drawForm();
   update();
+}
+
+// ---------------------------------------------------------------------------
+// Static rendering: a calculation without its form (design report).
+// ---------------------------------------------------------------------------
+
+/** The visible fields as the reader filled them in: label, value text, unit, error. */
+function staticInputs(page, state, v, errors) {
+  const out = [];
+  for (const s of page.sections) {
+    if (!isVisible(s, v)) continue;
+    for (const f of s.fields) {
+      if (!isVisible(f, v)) continue;
+      const raw = String(state.raw[f.key] ?? '').trim();
+      const e = errors.get(f.key);
+      let value = raw;
+      let unit = '';
+      if (f.type === 'number') {
+        if (!raw && !e) continue; // an optional field left empty
+        if (f.units?.length) unit = unitLabel(state.units[f.key]);
+      } else if (f.type === 'text') {
+        if (!raw) continue;
+      } else {
+        const o = f.options.find((x) => String(x.value) === state.raw[f.key]);
+        if (o) value = optLabel(o);
+      }
+      out.push({ key: f.key, label: labelOf(f, v), value, unit, error: e ? t(e[0], e[1]) : '' });
+    }
+  }
+  return out;
+}
+
+const shorten = (s, n = 60) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+function inputsListHtml(inputs) {
+  if (!inputs.length) return '';
+  return `<dl class="inputs-list">${inputs.map((x) => `<div${x.error ? ' class="bad"' : ''}><dt>${esc(x.label)}</dt><dd>${esc(shorten(x.value) || '—')}${
+    x.unit ? ` <span class="u">${esc(x.unit)}</span>` : ''}${x.error ? ` <small class="field-error">${esc(x.error)}</small>` : ''}</dd></div>`).join('')}</dl>`;
+}
+
+/**
+ * A result for reading, not for working in: buttons, button-style links and
+ * form controls are taken out, and every collapsible block (calculation
+ * steps, formula) is open whatever the reader's `stepsOpen` preference says.
+ * Works on the HTML the pages build themselves, where every attribute value
+ * is escaped, so a tag never contains a bare ">".
+ */
+export function staticHtml(html) {
+  return String(html ?? '')
+    .replace(/<button\b[^>]*>[\s\S]*?<\/button>/g, '')
+    .replace(/<a\b[^>]*\sclass="btn\b[^>]*>[\s\S]*?<\/a>/g, '')
+    .replace(/<select\b[^>]*>[\s\S]*?<\/select>/g, '')
+    .replace(/<textarea\b[^>]*>[\s\S]*?<\/textarea>/g, '')
+    .replace(/<input\b[^>]*>/g, '')
+    .replace(/<details\b(?![^>]*\sopen\b)/g, '<details open');
+}
+
+/**
+ * A calculation as static HTML: the same parsing, validation, compute, render
+ * and diagram as mountCalculator, without a form, listeners, the parameter
+ * plot or the next-step links, and without touching the address.
+ *
+ *   renderStatic(page, params, { values }?)
+ *     → { ok, inputs, inputsHtml, resultHtml, diagramHtml }
+ *
+ * `params` are the URL parameters the calculator keeps (URLSearchParams or a
+ * query string, e.g. a saved calculation). Parameters the page no longer has
+ * are ignored and missing ones take their defaults, as on the page itself.
+ * `values` is for a page that keeps its own state (page.mount): the state its
+ * own parser made of the parameters is handed to compute / render / diagram
+ * as it is, and there is no field list.
+ *
+ * ok          false when a field is invalid, the page reports an error or throws
+ * inputs      [{ key, label, value, unit, error }] of the visible fields
+ * inputsHtml  the same as a <dl class="inputs-list"> ('' without fields)
+ * resultHtml  what the result card shows (headline values, messages, tables,
+ *             steps); with invalid inputs the calculator's own message
+ * diagramHtml the drawing, apart: placeDiagram(element, diagramHtml) puts it
+ *             where the calculator shows it and adds the enlarge button
+ */
+export function renderStatic(page, params, { values: own } = {}) {
+  const none = { ok: false, inputs: [], inputsHtml: '', resultHtml: '', diagramHtml: '' };
+  if (typeof page?.compute !== 'function' || typeof page.render !== 'function' || !Array.isArray(page.sections)) return none;
+  const query = params instanceof URLSearchParams ? params : new URLSearchParams(typeof params === 'string' ? params : '');
+  try {
+    const state = initialState(page, query);
+    const v = own ?? values(page, state);
+    const errors = own ? new Map() : inputErrors(page, state, v);
+    const inputs = own ? [] : staticInputs(page, state, v, errors);
+    let parts;
+    try {
+      parts = resultParts(page, v, state.units, errors.size);
+    } catch (err) {
+      // Stored values the page cannot work with: its "cannot calculate" line.
+      console.error(err);
+      parts = { res: undefined, html: invalidHtml(), diagram: '' };
+    }
+    return {
+      ok: !errors.size && !!parts.res && parts.res.ok !== false,
+      inputs,
+      inputsHtml: inputsListHtml(inputs),
+      resultHtml: staticHtml(parts.html),
+      diagramHtml: staticHtml(parts.diagram),
+    };
+  } catch (err) {
+    console.error(err);
+    return { ...none, resultHtml: invalidHtml() };
+  }
 }
 
 // ---------------------------------------------------------------------------

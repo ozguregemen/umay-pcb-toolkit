@@ -87,6 +87,7 @@ Bu belge, Umay PCB Toolkit'i yaygın PCB ve elektronik hesaplayıcılarıyla kar
 - **Doğrulama:** motor testleri ve tüm şemaların TR/EN testi her değişiklikte otomatik çalışır; değerler elle veya tam çözümlerle hesaplanmıştır.
 - **Tolerans analizi:** bileşen toleranslarının çıktıya etkisi (en kötü durum ve RSS) incelenen araçlarda yoktur.
 - **Erişim:** kurulum gerektirmez, her işletim sisteminde ve telefonda çalışır, açık kaynaktır, sonuçlar bağlantıyla paylaşılır.
+- **Tasarım raporu ve KiCad'e aktarım:** bir projenin kayıtlı hesapları, girdileri, sonuçları ve hesap adımlarıyla yazdırılabilir tek bir rapora dönüşür; üretici sınırları ve net sınıfları KiCad'in özel tasarım kuralı dosyası olarak dışa aktarılır. İncelenen hesaplayıcılarda ikisi de yoktur.
 - **Bulma ve saklama:** arama yalnız araç adlarını değil ders metinlerini ve sözlük terimlerini de tarar; araçlar sık kullanılanlara eklenir, hesaplar adıyla ve projesiyle kaydedilip dosya olarak dışa aktarılır (Saturn'de proje ya da kayıt kavramı yoktur).
 
 ## Henüz eklenmeyenler (gelecek iş)

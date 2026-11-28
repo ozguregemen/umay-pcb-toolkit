@@ -24,7 +24,7 @@ const plotPages = pages.filter((p) => p.plot);
 
 // The pages the feature was introduced on; a `plot` must not go missing from them.
 const EXPECTED = ['trace', 'via', 'fusing', 'impedance', 'crosstalk', 'termination', 'dcdc', 'thermal', 'thermalvia', 'mosfet',
-  'divider', 'rc', 'led', 'ntc', 'shunt', 'i2c', 'holdup', 'linkbudget', 'stencil', 'xtalgm'];
+  'divider', 'rc', 'led', 'ntc', 'shunt', 'i2c', 'holdup', 'linkbudget', 'stencil', 'xtalgm', 'panel', 'cable'];
 
 const fin = Number.isFinite;
 const fieldsOf = (page) => page.sections.flatMap((s) => s.fields);

@@ -89,6 +89,12 @@ export const cases = [
     eq(got[1].name.length, 80, 'name trimmed');
     ok(/^[\w-]+$/.test(got[1].id), 'id generated');
     eq(sanitizeSaved('nope').length, 0, 'not a list');
+    // A number no Date can hold would make every page that shows the date throw.
+    for (const at of [1e300, -1e300, 8.64e15 + 1, Infinity, NaN, '5']) {
+      const [x] = sanitizeSaved([{ tool: 'via', at }]);
+      ok(Math.abs(x.at - Date.now()) < 60_000 && !Number.isNaN(new Date(x.at).getTime()), `at ${at} is replaced by now`);
+    }
+    eq(sanitizeSaved([{ tool: 'via', at: 8.64e15 }])[0].at, 8.64e15, 'the last valid time is kept');
   }],
 
   ['saved: add, delete, undo, export and import', () => {
@@ -101,6 +107,8 @@ export const cases = [
     const had = isFav('trace');
     if (!had) toggleFav('trace');
     const file = exportData();
+    // The file format: one object; project details were added later (tests/cases/report.js).
+    eq(Object.keys(JSON.parse(file)).join(), 'app,version,favs,saved,projects', 'keys of the export file');
     removeSaved(a.id);
     eq(listSaved().length, before + 1, 'deleted');
     restoreSaved(a, 1);

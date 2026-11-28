@@ -13,6 +13,7 @@ import { mountLearnIndex, mountLesson, lessonsForTool } from './learn/index.js';
 import { reveal } from './learn/search.js';
 import { favs, listSaved, savedHref } from './saved.js';
 import { decorateTool, mountSaved } from './ui/saved.js';
+import { mountReport, reportProject, reportDocTitle } from './ui/report.js';
 
 const main = document.getElementById('main');
 const sidebar = document.getElementById('sidebar');
@@ -154,7 +155,7 @@ async function route(keepScroll = false) {
   let activeId = '';
   if (tool) activeId = id;
   else if (isLearn) activeId = id === 'learn/glossary' ? id : 'learn';
-  else if (id === 'saved') activeId = id;
+  else if (id === 'saved' || id === 'report') activeId = 'saved'; // a report belongs to the saved calculations
   const token = ++routeToken;
   closeDrawer();
   renderChrome(activeId);
@@ -162,6 +163,11 @@ async function route(keepScroll = false) {
   if (id === 'saved') {
     document.title = `${t('saved_title')} · ${t('appName')}`;
     mountSaved(main);
+  } else if (id === 'report') {
+    // #/report?p=<project>: the design report of one project. It fills its
+    // sections on its own and stops by itself when another page replaces it.
+    document.title = reportDocTitle(reportProject(params));
+    mountReport(main, params);
   } else if (isLearn) {
     const lessonId = id.slice('learn/'.length);
     document.title = `${t(lessonId ? `lesson_${lessonId}` : 'learn_title')} · ${t('appName')}`;
@@ -251,8 +257,10 @@ onPrefChange((k) => {
 
 // Remember whether the reader keeps the calculation steps open: the result is
 // redrawn on every keystroke, so the state cannot live in the element.
+// (Not in a design report: there the steps are always drawn open.)
 document.addEventListener('toggle', (e) => {
-  if (e.target.matches?.('details.steps') && (getPref('stepsOpen') !== false) !== e.target.open) setPref('stepsOpen', e.target.open);
+  if (e.target.matches?.('details.steps') && !e.target.closest('.report')
+    && (getPref('stepsOpen') !== false) !== e.target.open) setPref('stepsOpen', e.target.open);
 }, true);
 
 // ---- Search ----

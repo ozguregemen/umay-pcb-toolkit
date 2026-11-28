@@ -26,6 +26,8 @@ export const TOOLS = [
     load: () => import('./pages/padstack.js') },
   { id: 'stencil', cat: 'pcb', icon: 'stencil', keywords: 'stencil şablon elek lehim pastası solder paste aperture açıklık alan oranı area ratio aspect ratio en-boy ipc-7525 bga qfn smt',
     load: () => import('./pages/stencil.js') },
+  { id: 'panel', cat: 'pcb', icon: 'panel', keywords: 'panel panelizasyon panelization verim yield kart sayısı boards per panel ray rail v-kesim v-score freze routing adet miktar üretim',
+    load: () => import('./pages/panel.js') },
   { id: 'fanout', cat: 'pcb', icon: 'fanout', keywords: 'fanout bga pitch adım pad arası iz geçişi routing channel between pads escape',
     load: () => import('./pages/fanout.js') },
   { id: 'fusing', cat: 'pcb', icon: 'fuse', keywords: 'fusing eritme sigorta onderdonk preece kısa devre short circuit melt',
@@ -64,6 +66,8 @@ export const TOOLS = [
     load: () => import('./pages/powertree.js') },
   { id: 'dcdrop', cat: 'power', icon: 'drop', keywords: 'gerilim düşümü voltage drop ir drop güç yolu power path iz via düzlem plane konnektör connector kablo cable awg direnç resistance kayıp loss',
     load: () => import('./pages/dcdrop.js') },
+  { id: 'cable', cat: 'power', icon: 'cable', keywords: 'kablo cable tel wire awg mm2 kesit cross-section gerilim düşümü voltage drop kayıp loss uzunluk length bakır copper alüminyum aluminium',
+    load: () => import('./pages/cable.js') },
   { id: 'pdn', cat: 'power', icon: 'pdn', keywords: 'pdn decoupling dekuplaj target impedance hedef empedans capacitor kondansatör esl esr bulk',
     load: () => import('./pages/pdn.js') },
   { id: 'dcdc', cat: 'power', icon: 'dcdc', keywords: 'dc-dc buck boost converter dönüştürücü regulator regülatör inductor bobin ripple dalgalanma smps',
@@ -118,6 +122,8 @@ export const TOOLS = [
     load: () => import('./pages/adc.js') },
   { id: 'units', cat: 'tools', icon: 'swap', keywords: 'unit birim convert dönüştür mil mm oz dbm watt db awg temperature sıcaklık',
     load: () => import('./pages/units.js') },
+  { id: 'kicadrules', cat: 'tools', icon: 'rules', keywords: 'kicad kural rules dru kicad_dru design rules tasarım kuralları drc net class net sınıfı dışa aktar export üretici fabricator jlcpcb pcbway',
+    load: () => import('./pages/kicadrules.js') },
 ];
 
 export const toolById = (id) => TOOLS.find((t) => t.id === id);

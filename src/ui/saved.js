@@ -8,6 +8,7 @@ import {
   isFav, toggleFav, listSaved, addSaved, updateSaved, removeSaved, restoreSaved,
   savedHref, projects, exportData, importData,
 } from '../saved.js';
+import { reportHref } from './report.js';
 
 let dialog;
 
@@ -156,8 +157,9 @@ export function mountSaved(root) {
       </header>
       <div class="saved-notice" role="status" aria-live="polite">${notice}</div>
       ${items.length ? names.map((p) => `
-        <section class="home-section">
+        <section class="home-section saved-group">
           <h2>${esc(p || t('saved_noProject'))} <span class="badge">${groups.get(p).length}</span></h2>
+          <a class="btn ghost" href="${esc(reportHref(p))}" title="${esc(t('report_btnTitle'))}" aria-label="${esc(`${t('report_btn')}: ${p || t('saved_noProject')}`)}">${icon('notes', 16)}<span>${esc(t('report_btn'))}</span></a>
           <ul class="saved-list">
             ${groups.get(p).map((x) => {
               const tool = toolById(x.tool);
