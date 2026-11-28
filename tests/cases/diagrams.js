@@ -48,7 +48,7 @@ function variants(page) {
       for (const [k, val] of Object.entries(o.set ?? {})) {
         raw[k] = String(val);
         const ff = fieldsOf(page).find((x) => x.key === k);
-        if (ff?.type === 'number' && ff.units) units[k] = ff.unit ?? ff.units[0];
+        if (ff?.type === 'number' && ff.units) units[k] = ff.units.includes(o.set[`${k}_u`]) ? o.set[`${k}_u`] : ff.unit ?? ff.units[0];
       }
       list.push({ raw, units, label: `${f.key}=${o.value}` });
     }

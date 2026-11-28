@@ -397,7 +397,8 @@ export function mountCalculator(root, page, params) {
   };
 
   // An option may carry `set: { key: value }` — example values that make sense
-  // for it (e.g. switching buck → boost). Values are in the field's first unit.
+  // for it (e.g. switching buck → boost). Values are in the field's first unit,
+  // unless the set names another one of the field's units as `<key>_u`.
   const applySet = (key, value) => {
     const f = fieldsOf(page).find((x) => x.key === key);
     const o = f?.options?.find((x) => String(x.value) === value);
@@ -406,7 +407,10 @@ export function mountCalculator(root, page, params) {
       const ff = fieldsOf(page).find((x) => x.key === k);
       if (!ff) continue;
       state.raw[k] = String(val);
-      if (ff.type === 'number' && ff.units) state.units[k] = ff.unit ?? ff.units[0];
+      if (ff.type === 'number' && ff.units) {
+        const unit = o.set[`${k}_u`];
+        state.units[k] = ff.units.includes(unit) ? unit : ff.unit ?? ff.units[0];
+      }
     }
     return true;
   };

@@ -208,6 +208,8 @@ IPC-7525’in yaygın kuralı: alan oranı en az 0,66, en-boy oranı (açıklık
 > [!QUIZ] Bir BGA’nın pasta açıklıkları 0,30 mm çapında yuvarlak. 0,12 mm’lik stencil pastayı bırakır mı? 0,10 mm’lik stencilin bedeli nedir?
 > D / (4 × T) = 0,30 / 0,48 = 0,625: 0,66’nın altında, baskı güvenilmez. 0,10 mm ile 0,30 / 0,40 = 0,75 olur, yeterli. Ama artık bütün açıklıklar %17 daha az pasta basar; büyük bir konnektöre ya da bobine bu az gelebilir.
 
+[[calc:stencil?shape=circle&d=0.3&d_u=mm&t=0.12&t_u=mm|0,30 mm açıklık, 0,12 mm stencil]]
+
 - **İnce adımın yanında büyük parça:** stencil üreticisi açıklıkları küçültür ya da büyütür, ya da bir bölgesi daha ince veya kalın **kademeli stencil** (step stencil) yapar. Kademe, en yakın açıklıkla arasında mesafe ister: çok lehim isteyen parçaları ince adımlı entegrelerden uzak tutun.
 - **Termal padler:** açıklığı pencerelere bölün ([[lesson:footprints|footprint dersi]]).
 
@@ -348,6 +350,8 @@ The common rule from IPC-7525: area ratio at least 0.66, and aspect ratio (apert
 
 > [!QUIZ] The paste apertures of a BGA are round, 0.30 mm in diameter. Does a 0.12 mm stencil release the paste? What does a 0.10 mm stencil cost?
 > D / (4 × T) = 0.30 / 0.48 = 0.625: below 0.66, the print is unreliable. With 0.10 mm it is 0.30 / 0.40 = 0.75, enough. But every aperture now prints 17 % less paste, which may be too little for a large connector or inductor.
+
+[[calc:stencil?shape=circle&d=0.3&d_u=mm&t=0.12&t_u=mm|0.30 mm aperture, 0.12 mm stencil]]
 
 - **Fine pitch next to large parts:** the stencil maker shrinks or enlarges apertures or makes a **stepped stencil**, thinner or thicker in one area. A step needs distance to the nearest aperture: keep parts that need much solder away from fine-pitch ICs.
 - **Thermal pads:** split the aperture into windows ([[lesson:footprints|footprint lesson]]).

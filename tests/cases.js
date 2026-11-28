@@ -22,10 +22,14 @@ import { cases as thermalvia } from './cases/thermalvia.js';
 import { cases as dcdrop } from './cases/dcdrop.js';
 import { cases as termination } from './cases/termination.js';
 import { cases as protection } from './cases/protection.js';
+import { cases as stencil } from './cases/stencil.js';
+import { cases as holdup } from './cases/holdup.js';
+import { cases as linkbudget } from './cases/linkbudget.js';
+import { cases as xtalgm } from './cases/xtalgm.js';
 
 export const cases = [
   ...pcb, ...si, ...power, ...circuit, ...extra,
   ...matching, ...interfaces, ...stackup, ...circuit2, ...power2,
   ...diagrams, ...integrity, ...search, ...math, ...tolerance, ...powertree, ...arith, ...thermalvia, ...dcdrop,
-  ...termination, ...protection,
+  ...termination, ...protection, ...stencil, ...holdup, ...linkbudget, ...xtalgm,
 ];

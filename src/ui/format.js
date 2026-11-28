@@ -56,6 +56,7 @@ const UNIT_LABELS = {
   KW: '°C/W', s: 's', ms: 'ms', nH: 'nH', uH: 'µH', mH: 'mH', pF: 'pF', nF: 'nF', uF: 'µF',
   mohm: 'mΩ', kohm: 'kΩ', Mohm: 'MΩ', mV: 'mV', V: 'V', mW: 'mW', W: 'W', mA: 'mA', A: 'A',
   WmK: 'W/m·K', Wm2K: 'W/m²·K', cm2: 'cm²', in2: 'in²', dBm: 'dBm', psin: 'ps/in', psmm: 'ps/mm', farad: 'F', henry: 'H',
+  mAV: 'mA/V', uAV: 'µA/V', uW: 'µW',
 };
 export const unitLabel = (u) => UNIT_LABELS[u] ?? u;
 
